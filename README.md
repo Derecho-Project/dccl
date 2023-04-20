@@ -1,2 +1,2 @@
-# dccl
+# DCCL
 Derecho Collective Communication Library
