@@ -1,7 +1,10 @@
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <limits>
+#include <unistd.h>
 #include <derecho/core/derecho.hpp>
+#include <derecho/utils/logger.hpp>
 #include <dccl.hpp>
 #include "blob.hpp"
 
@@ -78,33 +81,72 @@ ncclResult_t do_reduce(const void*  sendbuf,
                        ncclRedOp_t  op) {
     const DT*   psend = static_cast<const DT*>(sendbuf);
     DT*         precv = static_cast<DT*>(recvbuf);
-    // TODO: this needs to be optimized using AVX instructions
-    for (size_t i=0;i<count;i++) {
-        switch(op) {
-        case ncclSum:
-            precv[i] += psend[i];
-            break;
-        case ncclProd:
-            precv[i] *= psend[i];
-            break;
-        case ncclMax:
-            if (precv[i] < psend[i]) {
-                precv[i] = psend[i];
-            }
-            break;
-        case ncclMin:
-            if (precv[i] > psend[i]) {
-                precv[i] = psend[i];
-            }
-            break;
-        case ncclAvg:
-            // we do not do average, but do sum and divide
-            return ncclInvalidUsage;
-            break;
-        default:
-            return ncclInvalidArgument;
-            break;
+    // std::size_t clsz = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
+    // we have to use constexp to enable SIMD optimization
+    // Use CACHELINE_SZ macro passed during compilation
+
+    if (reinterpret_cast<uint64_t>(sendbuf)%sizeof(DT)) {
+        dbg_default_warn("sendbuf is not aligned with data type:{}, performance might be degraded.",typeid(DT).name());
+    }
+
+    if (reinterpret_cast<uint64_t>(recvbuf)%sizeof(DT)) {
+        dbg_default_warn("sendbuf is not aligned with data type:{}, performance might be degraded.",typeid(DT).name());
+    }
+
+    if (((reinterpret_cast<uint64_t>(recvbuf)%CLSZ)) != ((reinterpret_cast<uint64_t>(sendbuf)%CLSZ))) {
+        dbg_default_warn("sendbuf and recvbuf are not aligned, performance might be degraded.");
+    }
+
+    /*
+     * The data is arranged in the following layout:
+     *
+     * HHH[DDDDDDDD][DDDDDDDD]...[DDDDDDDD]TTT
+     *     <--CL-->  <--CL-->     <--CL-->
+     * 
+     * The head and tail are handled separately.
+     */
+    std::size_t             header_count = (CLSZ - reinterpret_cast<uint64_t>(recvbuf)%CLSZ)/sizeof(DT);
+    constexpr std::size_t   pack_count = CLSZ/sizeof(DT); // we assume CLSZ%sizeof(DT) == 0
+    std::size_t             num_pack = count/pack_count;
+    std::size_t             tail_count = (CLSZ+ (count%pack_count)-header_count)%CLSZ;
+
+
+#define OP_SUM(r,s) (r)+=(s)
+#define OP_MIN(r,s) if((r)>(s))(r)=(s)
+#define OP_MAX(r,s) if((r)<(s))(r)=(s)
+#define OP_PROD(r,s) (r)*=(s)
+#define REDUCE(OP) \
+        for(size_t i=0;i<header_count;i++) { \
+            OP(precv[i],psend[i]); \
+        } \
+        for(size_t j=0;j<num_pack;j++) \
+        for(size_t i=0;i<pack_count;i++) { \
+            OP(precv[header_count+j*pack_count+i],psend[header_count+j*pack_count+i]); \
+        } \
+        for(size_t i=0;i<tail_count;i++) { \
+            OP(precv[count-1-i],psend[count-1-i]); \
         }
+
+    switch(op) {
+    case ncclSum:
+        REDUCE(OP_SUM);
+        break;
+    case ncclProd:
+        REDUCE(OP_PROD);
+        break;
+    case ncclMax:
+        REDUCE(OP_MAX);
+        break;
+    case ncclMin:
+        REDUCE(OP_MIN);
+        break;
+    case ncclAvg:
+        // we do not do average, but do sum and divide
+        return ncclInvalidUsage;
+        break;
+    default:
+        return ncclInvalidArgument;
+        break;
     }
     return ncclSuccess;
 }
