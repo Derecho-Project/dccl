@@ -86,15 +86,11 @@ ncclResult_t do_reduce(const void*  sendbuf,
     // Use CACHELINE_SZ macro passed during compilation
 
     if (reinterpret_cast<uint64_t>(sendbuf)%sizeof(DT)) {
-        dbg_default_warn("sendbuf is not aligned with data type:{}, performance might be degraded.",typeid(DT).name());
+        dbg_default_warn("sendbuf@{:p} is not aligned with data type:{},size={}, performance might be degraded.",sendbuf,typeid(DT).name(),sizeof(DT));
     }
 
     if (reinterpret_cast<uint64_t>(recvbuf)%sizeof(DT)) {
-        dbg_default_warn("sendbuf is not aligned with data type:{}, performance might be degraded.",typeid(DT).name());
-    }
-
-    if (((reinterpret_cast<uint64_t>(recvbuf)%CLSZ)) != ((reinterpret_cast<uint64_t>(sendbuf)%CLSZ))) {
-        dbg_default_warn("sendbuf and recvbuf are not aligned, performance might be degraded.");
+        dbg_default_warn("recvbuf@{:p} is not aligned with data type:{},size={}, performance might be degraded.",recvbuf,typeid(DT).name(),sizeof(DT));
     }
 
     /*
@@ -102,26 +98,42 @@ ncclResult_t do_reduce(const void*  sendbuf,
      *
      * HHH[DDDDDDDD][DDDDDDDD]...[DDDDDDDD]TTT
      *     <--CL-->  <--CL-->     <--CL-->
+     *  ^     ^                             ^
+     *  |     |                             +- tail count
+     *  |     +- pack count
+     *  +- head_count
+     *
+     * Special case:
+     * [...DDDDDD...]
+     *     Head = count
+     *     tail = 0
      * 
      * The head and tail are handled separately.
      */
-    std::size_t             header_count = (CLSZ - reinterpret_cast<uint64_t>(recvbuf)%CLSZ)/sizeof(DT);
+    std::size_t             head_count = (CLSZ - reinterpret_cast<uint64_t>(recvbuf)%CLSZ)%CLSZ/sizeof(DT);
     constexpr std::size_t   pack_count = CLSZ/sizeof(DT); // we assume CLSZ%sizeof(DT) == 0
     std::size_t             num_pack = count/pack_count;
-    std::size_t             tail_count = (CLSZ+ (count%pack_count)-header_count)%CLSZ;
+    std::size_t             tail_count = (pack_count + (count%pack_count) - head_count)%pack_count;
+    // for the special case.
+    if ((tail_count + head_count) > count) {
+        head_count = count;
+        tail_count = 0;
+    }
 
+    dbg_default_trace("{}:head_count={},pack_count={},num_pack={},tail_count={}",
+                      __func__,head_count,pack_count,num_pack,tail_count);
 
 #define OP_SUM(r,s) (r)+=(s)
 #define OP_MIN(r,s) if((r)>(s))(r)=(s)
 #define OP_MAX(r,s) if((r)<(s))(r)=(s)
 #define OP_PROD(r,s) (r)*=(s)
 #define REDUCE(OP) \
-        for(size_t i=0;i<header_count;i++) { \
+        for(size_t i=0;i<head_count;i++) { \
             OP(precv[i],psend[i]); \
         } \
         for(size_t j=0;j<num_pack;j++) \
         for(size_t i=0;i<pack_count;i++) { \
-            OP(precv[header_count+j*pack_count+i],psend[header_count+j*pack_count+i]); \
+            OP(precv[head_count+j*pack_count+i],psend[head_count+j*pack_count+i]); \
         } \
         for(size_t i=0;i<tail_count;i++) { \
             OP(precv[count-1-i],psend[count-1-i]); \

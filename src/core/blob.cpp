@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <stdlib.h>
+#include <derecho/utils/logger.hpp>
 #include "blob.hpp"
 
 namespace derecho {
@@ -33,7 +34,12 @@ Blob::Blob(const uint8_t* const b, const decltype(size) s) :
     bytes(nullptr), size(0), capacity(0), memory_mode(object_memory_mode_t::DEFAULT) {
     if(s > 0) {
         // uint8_t* t_bytes = PAGE_ALIGNED_NEW(s);
-        uint8_t* t_bytes = static_cast<uint8_t*>(malloc(s));
+        // uint8_t* t_bytes = static_cast<uint8_t*>(malloc(s));
+        uint8_t* t_bytes = nullptr;
+        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CLSZ, s)) {
+            dbg_default_error("posix_memalign error:{}",strerror(errno));
+        }
+        assert(t_bytes);
         if (b != nullptr) {
             memcpy(t_bytes, b, s);
         } else {
@@ -49,7 +55,12 @@ Blob::Blob(const uint8_t* b, const decltype(size) s, bool emplaced) :
     bytes(b), size(s), capacity(s), memory_mode((emplaced)?object_memory_mode_t::EMPLACED:object_memory_mode_t::DEFAULT) {
     if ( (size>0) && (emplaced==false)) {
         // uint8_t* t_bytes = PAGE_ALIGNED_NEW(s);
-        uint8_t* t_bytes = static_cast<uint8_t*>(malloc(s));
+        // uint8_t* t_bytes = static_cast<uint8_t*>(malloc(s));
+        uint8_t* t_bytes = nullptr;
+        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CLSZ, s)) {
+            dbg_default_error("posix_memalign error:{}",strerror(errno));
+        }
+        assert(t_bytes);
         if (b != nullptr) {
             memcpy(t_bytes, b, s);
         } else {
@@ -71,7 +82,12 @@ Blob::Blob(const blob_generator_func_t& generator, const decltype(size) s):
 Blob::Blob(const Blob& other) :
     bytes(nullptr), size(0), capacity(0), memory_mode(object_memory_mode_t::DEFAULT) {
     if(other.size > 0) {
-        uint8_t* t_bytes = static_cast<uint8_t*>(malloc(other.size));
+        // uint8_t* t_bytes = static_cast<uint8_t*>(malloc(other.size));
+        uint8_t* t_bytes = nullptr;
+        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CLSZ, other.size)) {
+            dbg_default_error("posix_memalign error:{}",strerror(errno));
+        }
+        assert(t_bytes);
         if (memory_mode == object_memory_mode_t::BLOB_GENERATOR) {
             // instantiate data.
             auto number_bytes_generated = other.blob_generator(t_bytes,other.size);
@@ -182,7 +198,12 @@ std::size_t Blob::bytes_size() const {
 void Blob::post_object(const std::function<void(uint8_t const* const, std::size_t)>& f) const {
     if (size > 0 && (memory_mode == object_memory_mode_t::BLOB_GENERATOR)) {
         // we have to instatiate the data. CAUTIOUS: this is inefficient. Please use BLOB_GENERATOR mode carefully.
-        uint8_t* local_bytes = static_cast<uint8_t*>(malloc(size));
+        // uint8_t* local_bytes = static_cast<uint8_t*>(malloc(size));
+        uint8_t* local_bytes = nullptr;
+        if(posix_memalign(reinterpret_cast<void**>(&local_bytes), CLSZ, size)) {
+            dbg_default_error("posix_memalign error:{}",strerror(errno));
+        }
+        assert(local_bytes);
         auto number_bytes_generated = blob_generator(local_bytes,size);
         if (number_bytes_generated != size) {
             free(local_bytes);
