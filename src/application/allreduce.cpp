@@ -2,6 +2,9 @@
 #include <iostream>
 #include <cstring>
 #include <unistd.h>
+#include <getopt.h>
+#include <derecho/utils/time.h>
+
 
 const char* help_string = 
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
@@ -95,8 +98,8 @@ int main(int argc, char** argv) {
 
     size_t warmup_count = 0;
     size_t repeat_count = 1000;
-    size_t data_type = ncclUint32;
-    size_t operation = ncclSum;
+    ncclDataType_t data_type = ncclUint32;
+    ncclRedOp_t operation = ncclSum;
     size_t data_count = 1024;
 
     while (true) {
@@ -115,7 +118,10 @@ int main(int argc, char** argv) {
             repeat_count = std::stoul(optarg);
             break;
         case 't':
-            data_type = std::stoul(optarg);
+            data_type = parse_data_type(optarg);
+            break;
+        case 'o':
+            operation = parse_reduce_operation(optarg);
             break;
         case 'c':
             data_count = std::stoul(optarg);
@@ -142,10 +148,11 @@ int main(int argc, char** argv) {
     }
 
     // step 2 - allocating data
-    void* sendbuf,recvbuf;
+    void* sendbuf = nullptr;
+    void* recvbuf = nullptr;
     uint64_t cacheline_sz = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
-    if (posix_memalign(sendbuf,cacheline_sz,data_count*size_of_type(data_type)) ||
-        posix_memalign(recvbuf,cacheline_sz,data_count*size_of_type(data_type))) {
+    if (posix_memalign(&sendbuf,cacheline_sz,data_count*size_of_type(data_type)) ||
+        posix_memalign(&recvbuf,cacheline_sz,data_count*size_of_type(data_type))) {
         std::cerr << "Failed to allocate " << data_count*size_of_type(data_type) << " bytes" << std::endl;
         std::cerr << "Error:" << std::strerror(errno) << std::endl;
         ncclCommFinalize(comm);
@@ -167,9 +174,9 @@ int main(int argc, char** argv) {
 
 
     // step 4 - run test
-    start_ts = get_time();
-    RUN_WITH_COUNTER(repeat);
-    end_ts = get_time();
+    uint64_t start_ts = get_time();
+    RUN_WITH_COUNTER(repeat_count);
+    uint64_t end_ts = get_time();
 
     // step 5 - finalize comm
     ret = ncclCommFinalize(comm);
