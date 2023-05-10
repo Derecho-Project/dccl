@@ -81,6 +81,11 @@ static ncclRedOp_t parse_reduce_operation(const char* ro_str) {
     return ncclSum;
 }
 
+static void print_help(const char* command_name) {
+    std::cout << "Usage: " << command_name << " [options]" << std::endl;
+    std::cout << help_string << std::endl;
+}
+
 int main(int argc, char** argv) {
     // step 0 - parameters
     static struct option long_options[] = {
@@ -126,6 +131,9 @@ int main(int argc, char** argv) {
         case 'c':
             data_count = std::stoul(optarg);
             break;
+        case 'h':
+            print_help(argv[0]);
+            return 0;
         default:
             break;
         }
@@ -170,13 +178,18 @@ int main(int argc, char** argv) {
     }
 
     // step 3 - warmup
+    std::cout << "warm up..." << std::endl;
     RUN_WITH_COUNTER(warmup_count);
+    std::cout << "done." << std::endl;
 
 
     // step 4 - run test
+    uint64_t cnt = repeat_count;
+    std::cout << "run test..." << std::endl;
     uint64_t start_ts = get_time();
-    RUN_WITH_COUNTER(repeat_count);
+    RUN_WITH_COUNTER(cnt);
     uint64_t end_ts = get_time();
+    std::cout << "done." << std::endl;
 
     // step 5 - finalize comm
     ret = ncclCommFinalize(comm);
@@ -185,6 +198,6 @@ int main(int argc, char** argv) {
     }
 
     // step 6 - get average
-    std::cout << "Average: " << ((end_ts-start_ts)/1000.0f) << " us" << std::endl;
+    std::cout << "Average: " << ((end_ts-start_ts)/1000/repeat_count) << " us" << std::endl;
     return 0;
 }
