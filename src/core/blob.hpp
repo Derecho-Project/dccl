@@ -4,7 +4,7 @@
 
 #include <derecho/mutils-serialization/SerializationSupport.hpp>
 
-namespace derecho{
+namespace dccl{
 
 enum object_memory_mode_t {
     DEFAULT,
@@ -71,4 +71,4 @@ public:
         const uint8_t* const v);
 };
 
-}
+} /* namespace dccl*/

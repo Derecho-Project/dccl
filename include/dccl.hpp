@@ -1,6 +1,7 @@
 #pragma once
 #include <sys/types.h>
 
+namespace dccl {
 /* Error type */
 typedef enum { ncclSuccess                 =  0,
                ncclUnhandledCudaError      =  1,
@@ -77,4 +78,4 @@ ncclResult_t  ncclCommFinalize(ncclComm_t comm);
  */
 ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
-
+}

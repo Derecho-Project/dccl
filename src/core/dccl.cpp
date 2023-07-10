@@ -8,14 +8,17 @@
 #include <dccl.hpp>
 #include "blob.hpp"
 
+using namespace derecho;
+
+namespace dccl {
 //----------------The derecho group---------------------
 // TODO: design the DCCL SubgroupType
 class DCCLSubgroupType : public mutils::ByteRepresentable,
-                         public derecho::GroupReference {
+                         public GroupReference {
 public:
     std::atomic<void*>  recvbuf;
 
-    virtual ncclResult_t reduce(const derecho::Blob& sendbuf, const size_t, ncclDataType_t datatype, ncclRedOp_t op, bool inplace);
+    virtual ncclResult_t reduce(const Blob& sendbuf, const size_t, ncclDataType_t datatype, ncclRedOp_t op, bool inplace);
 
     REGISTER_RPC_FUNCTIONS(DCCLSubgroupType,ORDERED_TARGETS(reduce));
 
@@ -163,7 +166,7 @@ ncclResult_t do_reduce(const void*  sendbuf,
     return ncclSuccess;
 }
 
-ncclResult_t DCCLSubgroupType::reduce(const derecho::Blob& sendbuf, const size_t count, ncclDataType_t datatype, ncclRedOp_t op, bool inplace) {
+ncclResult_t DCCLSubgroupType::reduce(const Blob& sendbuf, const size_t count, ncclDataType_t datatype, ncclRedOp_t op, bool inplace) {
     ncclResult_t ret = ncclSuccess;
 
     if (inplace  && (group->get_my_id() == group->get_rpc_caller_id())) {
@@ -246,14 +249,14 @@ ncclResult_t ncclCommInit(ncclComm_t* comm) {
     }
 
     // create a subgroup
-    derecho::SubgroupInfo si{derecho::make_subgroup_allocator<DCCLSubgroupType>()};
-    derecho::Group<DCCLSubgroupType>* group = 
-        new derecho::Group<DCCLSubgroupType>(
+    SubgroupInfo si{make_subgroup_allocator<DCCLSubgroupType>()};
+    Group<DCCLSubgroupType>* group = 
+        new Group<DCCLSubgroupType>(
             {},
             si,{},{},
             [&comm_handle](
                 persistent::PersistentRegistry*,
-                derecho::subgroup_id_t) {
+                subgroup_id_t) {
                 DCCLSubgroupType* subgroup_object = new DCCLSubgroupType();
                 comm_handle->derecho_group_object = reinterpret_cast<void*>(subgroup_object);
                 return std::unique_ptr<DCCLSubgroupType>(subgroup_object);
@@ -267,7 +270,7 @@ ncclResult_t ncclCommInit(ncclComm_t* comm) {
 
 ncclResult_t ncclCommFinalize(ncclComm_t comm) {
     if (comm != nullptr) {
-        derecho::Group<DCCLSubgroupType>* group = static_cast<derecho::Group<DCCLSubgroupType>*>(comm->derecho_group_handle);
+        Group<DCCLSubgroupType>* group = static_cast<Group<DCCLSubgroupType>*>(comm->derecho_group_handle);
         group->leave();
         delete group;
     }
@@ -284,11 +287,11 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     if (!comm || !comm->derecho_group_handle) {
         return ncclInvalidArgument;
     }
-    std::unique_ptr<derecho::Blob> blob_to_send;
+    std::unique_ptr<Blob> blob_to_send;
     bool inplace = (sendbuff == recvbuff);
     // if inplace, we have to copy the send data first, so set emplaced = !inplace
     // otherwise, we skip the copy.
-    blob_to_send = std::make_unique<derecho::Blob>(
+    blob_to_send = std::make_unique<Blob>(
                         reinterpret_cast<const uint8_t*>(sendbuff),
                         count*size_of_type(datatype),!inplace);
     ncclResult_t ret;
@@ -340,8 +343,8 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
         return ret;
     }
 
-    derecho::Group<DCCLSubgroupType>*   group = 
-                                        reinterpret_cast<derecho::Group<DCCLSubgroupType>*>(comm->derecho_group_handle);
+    Group<DCCLSubgroupType>*            group = 
+                                        reinterpret_cast<Group<DCCLSubgroupType>*>(comm->derecho_group_handle);
     DCCLSubgroupType*                   group_object = 
                                         reinterpret_cast<DCCLSubgroupType*>(comm->derecho_group_object);
     auto&                               dccl_subgroup_handle =
@@ -359,3 +362,4 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     group->barrier_sync();
     return ret;
 }
+}/*namespace dccl*/

@@ -3,7 +3,7 @@
 #include <derecho/utils/logger.hpp>
 #include "blob.hpp"
 
-namespace derecho {
+namespace dccl{
 
 /*
  *  IMPORTANT NOTICE of Blob Implementation

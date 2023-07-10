@@ -5,6 +5,7 @@
 #include <getopt.h>
 #include <derecho/utils/time.h>
 
+using namespace dccl;
 
 const char* help_string = 
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
