@@ -56,6 +56,9 @@ find_package(OpenSSL REQUIRED)
 # derecho
 find_package(derecho CONFIG REQUIRED)
 
+# doxygen
+find_package(Doxygen)
+
 # Derecho exports an IMPORT target, following the "new" way of
 # doing things, but for some reason we still need to do this
 # in order for some of the sub-components of Cascade to compile.
@@ -90,3 +93,13 @@ install(TARGETS dccl EXPORT dcclTargets
     install(FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/include/dccl.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+if (DOXYGEN_FOUND)
+    # create docs
+    doxygen_add_docs(docs
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ALL
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        CONFIG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
+    )
+endif()
