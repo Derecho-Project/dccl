@@ -6,13 +6,14 @@
 #include <derecho/core/derecho.hpp>
 #include <derecho/utils/logger.hpp>
 #include <dccl.hpp>
+#include "internal_common.hpp"
 #include "blob.hpp"
 
 using namespace derecho;
 
 namespace dccl {
 //----------------The derecho group---------------------
-// TODO: design the DCCL SubgroupType
+/*
 class DCCLSubgroupType : public mutils::ByteRepresentable,
                          public GroupReference {
 public:
@@ -48,6 +49,7 @@ public:
     // constructors
     DCCLSubgroupType():recvbuf(nullptr) {}
 };
+*/
 
 template<typename DT>
 ncclResult_t init_receive_buf(void* recvbuf,

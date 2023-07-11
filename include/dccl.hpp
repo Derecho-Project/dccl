@@ -20,6 +20,7 @@
  */
 namespace dccl {
 
+
 /**
  * @brief   Error types
  */
@@ -94,6 +95,11 @@ ncclResult_t pncclCommInitAll(ncclComm_t* comm, int ndev, const int* devlist);
 */
 
 /**
+ * @defgroup DCCL APIs
+ * @{
+ */
+
+/**
  * @brief   Initialize the communication infrastructure
  * @param[out]  comm    Pointer to a `ncclComm_t` object to be initialized
  *
@@ -130,4 +136,27 @@ ncclResult_t  ncclCommFinalize(ncclComm_t comm);
  */
 ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
-}
+
+/**
+ * @}
+ */
+
+/**
+ * @defgroup DCCL helper functions and macros
+ * @{
+ */
+
+/**
+ * @brief Test the offset of an address in a cacheline.
+ *
+ * @param[in]   addr        Some address of any pointer type
+ *
+ * @return      The offset of `addr` in a cacheline.
+ */
+#define CACHELINE_OFFSET(addr)  (reinterpret_cast<uint64_t>(addr)%CLSZ)
+
+/**
+ * @}
+ */
+
+} // namespace dccl
