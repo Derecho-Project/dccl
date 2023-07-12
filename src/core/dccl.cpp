@@ -218,28 +218,6 @@ ncclResult_t DCCLSubgroupType::reduce(const Blob& sendbuf, const size_t count, n
     return ncclSuccess;
 }
 
-inline size_t size_of_type(ncclDataType_t datatype) {
-    switch(datatype) {
-    case ncclInt8: // ncclChar
-    case ncclUint8:
-        return 1;
-    case ncclInt32: // ncclInt
-    case ncclUint32:
-    case ncclFloat32: // ncclFloat
-        return 4;
-    case ncclInt64:
-    case ncclUint64:
-    case ncclFloat64: // ncclDouble
-        return 8;
-    case ncclFloat16: // ncclHalf:
-#if defined(__CUDA_BF16_TYPES_EXIST__)
-    case ncclBfloat16:
-#endif
-        return 2;
-    default:
-        return 0;
-    }
-}
 //------------------------------------------------------
 
 ncclResult_t ncclCommInit(ncclComm_t* comm) {

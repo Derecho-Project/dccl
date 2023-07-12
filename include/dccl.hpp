@@ -153,7 +153,7 @@ ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
  *
  * @return      The offset of `addr` in a cacheline.
  */
-#define CACHELINE_OFFSET(addr)  (reinterpret_cast<uint64_t>(addr)%CLSZ)
+#define CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CLSZ )
 
 /**
  * @}
