@@ -79,103 +79,15 @@ ncclResult_t init_receive_buf(void* recvbuf,
     return ncclSuccess;
 }
 
-template<typename DT>
-ncclResult_t do_reduce(const void*  sendbuf,
-                       void*        recvbuf,
-                       size_t       count,
-                       ncclRedOp_t  op) {
-    const DT*   psend = static_cast<const DT*>(sendbuf);
-    DT*         precv = static_cast<DT*>(recvbuf);
-    // std::size_t clsz = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
-    // we have to use constexp to enable SIMD optimization
-    // Use CACHELINE_SZ macro passed during compilation
-
-    if (reinterpret_cast<uint64_t>(sendbuf)%sizeof(DT)) {
-        dbg_default_warn("sendbuf@{:p} is not aligned with data type:{},size={}, performance might be degraded.",sendbuf,typeid(DT).name(),sizeof(DT));
-    }
-
-    if (reinterpret_cast<uint64_t>(recvbuf)%sizeof(DT)) {
-        dbg_default_warn("recvbuf@{:p} is not aligned with data type:{},size={}, performance might be degraded.",recvbuf,typeid(DT).name(),sizeof(DT));
-    }
-
-    /*
-     * The data is arranged in the following layout:
-     *
-     * HHH[DDDDDDDD][DDDDDDDD]...[DDDDDDDD]TTT
-     *     <--CL-->  <--CL-->     <--CL-->
-     *  ^     ^                             ^
-     *  |     |                             +- tail count
-     *  |     +- pack count
-     *  +- head_count
-     *
-     * Special case:
-     * [...DDDDDD...]
-     *     Head = count
-     *     tail = 0
-     * 
-     * The head and tail are handled separately.
-     */
-    std::size_t             head_count = (CLSZ - reinterpret_cast<uint64_t>(recvbuf)%CLSZ)%CLSZ/sizeof(DT);
-    constexpr std::size_t   pack_count = CLSZ/sizeof(DT); // we assume CLSZ%sizeof(DT) == 0
-    std::size_t             num_pack = count/pack_count;
-    std::size_t             tail_count = (pack_count + (count%pack_count) - head_count)%pack_count;
-    // for the special case.
-    if ((tail_count + head_count) > count) {
-        head_count = count;
-        tail_count = 0;
-    }
-
-    dbg_default_trace("{}:head_count={},pack_count={},num_pack={},tail_count={}",
-                      __func__,head_count,pack_count,num_pack,tail_count);
-
-#define OP_SUM(r,s) (r)+=(s)
-#define OP_MIN(r,s) if((r)>(s))(r)=(s)
-#define OP_MAX(r,s) if((r)<(s))(r)=(s)
-#define OP_PROD(r,s) (r)*=(s)
-#define REDUCE(OP) \
-        for(size_t i=0;i<head_count;i++) { \
-            OP(precv[i],psend[i]); \
-        } \
-        for(size_t j=0;j<num_pack;j++) \
-        for(size_t i=0;i<pack_count;i++) { \
-            OP(precv[head_count+j*pack_count+i],psend[head_count+j*pack_count+i]); \
-        } \
-        for(size_t i=0;i<tail_count;i++) { \
-            OP(precv[count-1-i],psend[count-1-i]); \
-        }
-
-    switch(op) {
-    case ncclSum:
-        REDUCE(OP_SUM);
-        break;
-    case ncclProd:
-        REDUCE(OP_PROD);
-        break;
-    case ncclMax:
-        REDUCE(OP_MAX);
-        break;
-    case ncclMin:
-        REDUCE(OP_MIN);
-        break;
-    case ncclAvg:
-        // we do not do average, but do sum and divide
-        return ncclInvalidUsage;
-        break;
-    default:
-        return ncclInvalidArgument;
-        break;
-    }
-    return ncclSuccess;
-}
-
 ncclResult_t DCCLSubgroupType::reduce(const Blob& sendbuf, const size_t count, ncclDataType_t datatype, ncclRedOp_t op, bool inplace) {
     ncclResult_t ret = ncclSuccess;
 
-    if (inplace  && (group->get_my_id() == group->get_rpc_caller_id())) {
+    if (inplace && (group->get_my_id() == group->get_rpc_caller_id())) {
         return ret;
     }
 
     void* rbuf = this->recvbuf.load();
+    /*
     switch(datatype) {
     case ncclInt8: // ncclChar
         ret = do_reduce<int8_t>(sendbuf.bytes,rbuf,count,op);
@@ -215,7 +127,10 @@ ncclResult_t DCCLSubgroupType::reduce(const Blob& sendbuf, const size_t count, n
         // unknown type.
         ret = ncclInvalidArgument;
     }
-    return ncclSuccess;
+    */
+    ret = ncclInvalidArgument;
+    ON_DCCL_DATATYPE(datatype,ret=do_reduce,sendbuf.bytes,rbuf,count,op);
+    return ret;
 }
 
 //------------------------------------------------------

@@ -17,6 +17,21 @@ using namespace derecho;
 namespace dccl {
 
 /**
+ * @brief Get the DCCL `spdlog` logger singleton
+ * @return      A shared pointer to the logger, that can be used with Derecho's logger macros like the following:
+ *              dbg_trace, dbg_debug, dbg_warn, dbg_error, ...
+ */
+std::shared_ptr<spdlog::logger>& getDcclLogger();
+
+#define dccl_trace(...) dbg_trace(getDcclLogger(), __VA_ARGS__)
+#define dccl_debug(...) dbg_debug(getDcclLogger(), __VA_ARGS__)
+#define dccl_info(...)  dbg_info(getDcclLogger(), __VA_ARGS__)
+#define dccl_warn(...)  dbg_warn(getDcclLogger(), __VA_ARGS__)
+#define dccl_error(...) dbg_error(getDcclLogger(), __VA_ARGS__)
+#define dccl_crit(...)  dbg_crit(getDcclLogger(), __VA_ARGS__)
+#define dccl_flush()    dbg_flush(getDcclLogger())
+
+/**
  * @brief The DCCL Subgroup Class type
  * It defines the Derecho Subgroup type that supports the DCCL APIs.
  */
@@ -37,6 +52,9 @@ public:
      */
     virtual ncclResult_t reduce(const Blob& sendbuf, const size_t, ncclDataType_t datatype, ncclRedOp_t op, bool inplace);
 
+    /**
+     * @brief Register the RPC functions.
+     */
     REGISTER_RPC_FUNCTIONS(DCCLSubgroupType,ORDERED_TARGETS(reduce));
 
     // serialization support
@@ -182,6 +200,44 @@ inline size_t size_of_type(ncclDataType_t datatype) {
     }
 }
 
+/**
+ * @brief Macro expanding for specific DCCL data type.
+ * TODO: we should support Float16 here using something like:
+ * #if __cplusplus >= 202302L
+ * #include <stdfloat>
+ * #endif
+ *
+ * @param[in]   datatype        The data type
+ * @param[in]   expr            The expression suffixed with `<data type>`, like `<int32_t>`
+ * @param[in]   ...             the arguments passed to `expr<data type>()`
+ */
+#define ON_DCCL_DATATYPE(datatype, expr, ... ) \
+    switch (datatype) { \
+    case ncclInt8: \
+        expr<int8_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint8: \
+        expr<uint8_t>(__VA_ARGS__); \
+        break; \
+    case ncclInt32: \
+        expr<int32_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint32: \
+        expr<uint32_t>(__VA_ARGS__); \
+        break; \
+    case ncclInt64: \
+        expr<int64_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint64: \
+        expr<uint64_t>(__VA_ARGS__); \
+        break; \
+    case ncclFloat32: \
+        expr<float>(__VA_ARGS__); \
+        break; \
+    case ncclFloat64: \
+        expr<double>(__VA_ARGS__); \
+        break; \
+    }
 
 /**
  * @brief Reverse the least significants bits of an integer.
@@ -246,18 +302,107 @@ inline IntegerType log_two(IntegerType n) {
 }
 
 /**
- * @brief Get the DCCL `spdlog` logger singleton
- * @return      A shared pointer to the logger, that can be used with Derecho's logger macros like the following:
- *              dbg_trace, dbg_debug, dbg_warn, dbg_error, ...
+ * @brief Perform a local reduce
+ * This is an optimized reduce operation on two local buffers.
+ * It performs the following operation:
+ *
+ * `recvbuf[i] = op(recvbuf[i],senddat[i])`
+ *
+ * , for `i` in `[0, count)`.
+ *
+ * @tparam          DT          The type of the data.
+ * @param[in]       sendbuf     List of operand 1.
+ * @param[in,out]   recvbuf     List of operand 2, also used to receive the reduced results.
+ * @param[in]       count       The number of data entries in the algorithm.
+ * @param[in]       op          The reduce operation.
+ *
+ * @return          Error Code
  */
-std::shared_ptr<spdlog::logger>& getDcclLogger();
+template<typename DT>
+ncclResult_t do_reduce(const void*  sendbuf,
+                       void*        recvbuf,
+                       size_t       count,
+                       ncclRedOp_t  op) {
+    const DT*   psend = static_cast<const DT*>(sendbuf);
+    DT*         precv = static_cast<DT*>(recvbuf);
 
-#define dccl_trace(...) dbg_trace(getDcclLogger(), __VA_ARGS__)
-#define dccl_debug(...) dbg_debug(getDcclLogger(), __VA_ARGS__)
-#define dccl_info(...)  dbg_info(getDcclLogger(), __VA_ARGS__)
-#define dccl_warn(...)  dbg_warn(getDcclLogger(), __VA_ARGS__)
-#define dccl_error(...) dbg_error(getDcclLogger(), __VA_ARGS__)
-#define dccl_crit(...)  dbg_crit(getDcclLogger(), __VA_ARGS__)
-#define dccl_flush()    dbg_flush(getDcclLogger())
+    if (reinterpret_cast<uint64_t>(sendbuf)%sizeof(DT)) {
+        dccl_warn("sendbuf@{:p} is not aligned with data type:{},size={}, performance might be degraded.",
+                sendbuf,typeid(DT).name(),sizeof(DT));
+    }
 
+    if (reinterpret_cast<uint64_t>(recvbuf)%sizeof(DT)) {
+        dccl_warn("recvbuf@{:p} is not aligned with data type:{},size={}, performance might be degraded.",
+                recvbuf,typeid(DT).name(),sizeof(DT));
+    }
+
+    /*
+     * The data is arranged in the following layout:
+     *
+     * HHH[DDDDDDDD][DDDDDDDD]...[DDDDDDDD]TTT
+     *     <--CL-->  <--CL-->     <--CL-->
+     *  ^     ^                             ^
+     *  |     |                             +- tail count
+     *  |     +- pack count
+     *  +- head_count
+     *
+     * Special case:
+     * [...DDDDDD...]
+     *     Head = count
+     *     tail = 0
+     * 
+     * The head and tail are handled separately.
+     */
+    std::size_t             head_count = (CLSZ - reinterpret_cast<uint64_t>(recvbuf)%CLSZ)%CLSZ/sizeof(DT);
+    constexpr std::size_t   pack_count = CLSZ/sizeof(DT); // we assume CLSZ%sizeof(DT) == 0
+    std::size_t             num_pack = count/pack_count;
+    std::size_t             tail_count = (pack_count + (count%pack_count) - head_count)%pack_count;
+    // for the special case.
+    if ((tail_count + head_count) > count) {
+        head_count = count;
+        tail_count = 0;
+    }
+
+    dccl_trace("{}:head_count={},pack_count={},num_pack={},tail_count={}",
+                      __func__,head_count,pack_count,num_pack,tail_count);
+
+#define OP_SUM(r,s) (r)+=(s)
+#define OP_MIN(r,s) if((r)>(s))(r)=(s)
+#define OP_MAX(r,s) if((r)<(s))(r)=(s)
+#define OP_PROD(r,s) (r)*=(s)
+#define REDUCE(OP) \
+        for(size_t i=0;i<head_count;i++) { \
+            OP(precv[i],psend[i]); \
+        } \
+        for(size_t j=0;j<num_pack;j++) \
+        for(size_t i=0;i<pack_count;i++) { \
+            OP(precv[head_count+j*pack_count+i],psend[head_count+j*pack_count+i]); \
+        } \
+        for(size_t i=0;i<tail_count;i++) { \
+            OP(precv[count-1-i],psend[count-1-i]); \
+        }
+
+    switch(op) {
+    case ncclSum:
+        REDUCE(OP_SUM);
+        break;
+    case ncclProd:
+        REDUCE(OP_PROD);
+        break;
+    case ncclMax:
+        REDUCE(OP_MAX);
+        break;
+    case ncclMin:
+        REDUCE(OP_MIN);
+        break;
+    case ncclAvg:
+        // TODO: do this later.
+        return ncclInvalidUsage;
+        break;
+    default:
+        return ncclInvalidArgument;
+        break;
+    }
+    return ncclSuccess;
+}
 } // namespace dccl

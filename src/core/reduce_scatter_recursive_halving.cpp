@@ -16,6 +16,7 @@ ncclResult_t reduce_scatter_recursive_halving(
         ncclDataType_t  datatype,
         ncclRedOp_t     op,
         ncclComm_t      comm) {
+    ncclResult_t ret = ncclSuccess;
     // STEP 1: test constraints
     if (CACHELINE_OFFSET(buffer) != 0 || CACHELINE_OFFSET(scratchpad)) {
         dccl_warn("Function {} got CL-unaligned buffer@{:p} or scratchpad@{:p}. Performance might be compromised."
@@ -59,7 +60,7 @@ ncclResult_t reduce_scatter_recursive_halving(
         struct iovec siov,riov;
         siov.iov_base   = send_buffer;
         siov.iov_len    = step_bsize;
-        riov.iov_base   = recv_buffer;
+        riov.iov_base   = scratchpad;
         riov.iov_len    = step_bsize;
         SUBGROUP_HANDLE(comm).oob_send(shard_members.at(peer_rank),&siov,1);
         SUBGROUP_HANDLE(comm).oob_recv(shard_members.at(peer_rank),&riov,1);
@@ -69,12 +70,18 @@ ncclResult_t reduce_scatter_recursive_halving(
                                                                         // This might affect p2p heart beat
         // TODO: optimization opportunities here: we can wait OOB_OP_RECV first and then do reduce. But currently, 
         // the wait_for_oob_op needs improved to distinguish OOB_OP_RECV and OOB_OP_SEND.
-        // TODO: do reduce...
+
+        // do reduce...
+        ON_DCCL_DATATYPE(datatype,
+                         ret=do_reduce,
+                         scratchpad,recv_buffer,
+                         step_bsize/size_of_type(datatype),op);
+        if (ret != ncclSuccess) {
+            break;
+        }
     }
 
-
-
-    return ncclSuccess;
+    return ret;
 }
 
 } // namespace algorithm
