@@ -165,6 +165,36 @@ ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
 
 /**
+ * @brief Reduce-Scatter API
+ *
+ * This API is compatible to NVIDIA's NCCL:
+ *
+ * " Reduces data in sendbuff using op operation and leaves reduced result
+ *   scattered over the devices so that recvbuff on rank i will contain the i-th
+ *   block of the result.
+ *   Assumes sendcount is equal to nranks*recvcount, which means that sendbuff
+ *   should have a size of at least nranks*recvcount elements.
+ *
+ *   In-place operations will happen if recvbuff == sendbuff + rank * recvcount. "
+ *
+ * Please see NCCL's API in
+ * [nccl.h](https://github.com/NVIDIA/nccl/blob/6e24ef4e1f1eac9f104d115ef65429f179924ee7/src/nccl.h.in#L311-L321).
+ *
+ * @param[in]   sendbuff    The buffer containing local data to be reduced.
+ * @param[out]  recvbuff    The buffer to receive the reduced result.
+ * @param[in]   recvcount   The number of entries in the receive buffer.
+ * @param[in]   datatype    The type of the data.
+ * @param[in]   op          The reduced operation to be performed.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclReduceScatter(const void* sendbuffer, void* recvbuff,
+    size_t recvcount, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
+
+/**
  * @}
  */
 

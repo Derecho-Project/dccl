@@ -1,3 +1,8 @@
+/**
+ * @file    dccl.cpp
+ * @brief   The DCCP API implementations
+ */
+
 #include <atomic>
 #include <cstddef>
 #include <memory>
@@ -7,49 +12,101 @@
 #include <derecho/utils/logger.hpp>
 #include <dccl.hpp>
 #include "internal_common.hpp"
+#include "algorithms.hpp"
 #include "blob.hpp"
 
 using namespace derecho;
 
 namespace dccl {
-//----------------The derecho group---------------------
-/*
-class DCCLSubgroupType : public mutils::ByteRepresentable,
-                         public GroupReference {
-public:
-    std::atomic<void*>  recvbuf;
 
-    virtual ncclResult_t reduce(const Blob& sendbuf, const size_t, ncclDataType_t datatype, ncclRedOp_t op, bool inplace);
+#define VALIDATE_COMM(comm) \
+if (!comm || !comm->derecho_group_handle) { \
+    dccl_error("{}: invalid comm handle.", __func__); \
+    throw std::runtime_error (std::string(__func__) + " is unable to handle invalid comm handle."); \
+}
 
-    REGISTER_RPC_FUNCTIONS(DCCLSubgroupType,ORDERED_TARGETS(reduce));
+/**
+ * @brief The initial size of the scratchpad memory is 64 MB per thread.
+ */
+#define SCRATCHPAD_INI_SIZE     (1L<<26)
+/**
+ * @brief The maximum size of the scratchpad memory is 4 GBytes per thread.
+ */
+#define SCRATCHPAD_MAX_SIZE     (1L<<32)
+/**
+ * @brief the thread local scratch pad memory
+ * The scratch pad memory is pre-registered derecho OOB memory for zero-copy
+ * operations.
+ */
+thread_local void*  scratchpad = nullptr;
+/**
+ * @brief the current size of scratchpad memory.
+ */
+thread_local size_t scratchpad_size = 0L;
 
-    // serialization support
-    //
-    virtual std::size_t to_bytes(uint8_t*) const override {return 0;}
+/**
+ * @brief Make sure the scratch pad is big enough.
+ * This function will go through the following process:
+ *
+ * - If the requested scratchpad size is bigger than `SCRATCHPAD_MAX_SIZE`, throw an exception.
+ *
+ * - If the scratchpad is uninitialized or its size is smaller than the requested size, enlarge
+ *   the scratchpad to the smallest page aligned size no less than `max(size,SCRATCHPAD_INI_SIZE)`
+ *
+ * @param[in]   size        The requested scratchpad size.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error  In case of failure, raise an runtime error.
+ *
+ * @return      error code
+ */
+static ncclResult_t verify_scratchpad(size_t size, ncclComm_t comm) {
+    ncclResult_t ret = ncclSuccess;
 
-    virtual void post_object(const std::function<void(uint8_t const* const, std::size_t)>&) const override {}
-
-    virtual std::size_t bytes_size() const {return 0;}
-
-    static std::unique_ptr<DCCLSubgroupType> from_bytes(
-            mutils::DeserializationManager*, const uint8_t*) {
-        return std::make_unique<DCCLSubgroupType>();
+    if (size > SCRATCHPAD_MAX_SIZE) {
+        dccl_error("{}: Unable to allocate a scratch of {} Bytes, which is bigger than {} Bytes. "
+                   "See {}:{}",
+                   __func__, size, SCRATCHPAD_MAX_SIZE, __FILE__, __LINE__);
+        return ncclInvalidArgument;
     }
 
-    static mutils::context_ptr<DCCLSubgroupType> from_bytes_noalloc(
-            mutils::DeserializationManager*, const uint8_t*) {
-        return mutils::context_ptr<DCCLSubgroupType>{new DCCLSubgroupType()};
+    size_t new_size = (scratchpad_size < size) ?
+        ((size<=SCRATCHPAD_INI_SIZE)? SCRATCHPAD_INI_SIZE : (size + getpagesize() - 1) % getpagesize()) : 0;
+
+    if (new_size > 0) {
+        if (scratchpad_size > 0) {
+            ret = dcclDeregisterCacheMemory(comm, scratchpad, scratchpad_size);
+            if (ret != ncclSuccess) {
+                dccl_error("{} is unable to deregister existing scratchpad. "
+                           "See {}:{}",
+                           __func__, __FILE__, __LINE__);
+            }
+            return ret;
+        }
+        scratchpad = realloc(scratchpad,new_size);
+
+        if (!scratchpad) {
+            scratchpad_size = 0;
+            dccl_error("{} is unable to realloc memory of size {}, error = {}. See {}:{}",
+                       __func__, new_size, strerror(errno), __FILE__, __LINE__);
+            return ncclSystemError;
+        }
+
+        ret = dcclRegisterCacheMemory(comm, scratchpad, new_size);
+        if (ret != ncclSuccess) {
+            free(scratchpad);
+            scratchpad_size = 0;
+            dccl_error("{} is unable to register scratchpad with size {}. "
+                       "See {}:{}",
+                       __func__, new_size, __FILE__, __LINE__);
+            return ret;
+        }
+
+        scratchpad_size = new_size;
     }
-    static mutils::context_ptr<const DCCLSubgroupType> from_bytes_noalloc_const(
-            mutils::DeserializationManager*, const uint8_t*) {
-        return mutils::context_ptr<const DCCLSubgroupType>{new DCCLSubgroupType()};
-    }
-    void ensure_registered(mutils::DeserializationManager&) {}
-    
-    // constructors
-    DCCLSubgroupType():recvbuf(nullptr) {}
-};
-*/
+
+    return ret;
+}
 
 template<typename DT>
 ncclResult_t init_receive_buf(void* recvbuf,
@@ -285,5 +342,36 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     }
     group->barrier_sync();
     return ret;
+}
+
+ncclResult_t dcclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
+    VALIDATE_COMM(comm);
+    GROUP_HANDLE(comm)->register_oob_memory(buffer,size);
+}
+
+ncclResult_t dcclDeregisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
+    VALIDATE_COMM(comm);
+    //TODO: check size
+    GROUP_HANDLE(comm)->deregister_oob_memory(buffer);
+}
+
+ncclResult_t ncclReduceScatter(const void*      sendbuffer,
+                               void*            recvbuffer,
+                               size_t           recvcount,
+                               ncclDataType_t   datatype,
+                               ncclRedOp_t      op,
+                               ncclComm_t       comm) {
+    VALIDATE_COMM(comm);
+
+    // ncclResult_t ret = ncclSuccess;
+
+    //TODO: This is a brutal force wrapper for test. Do the following afterward:
+    // - prepare a writable send buffer
+    // - copy the corresponding block to destination.
+    return algorithm::reduce_scatter_recursive_halving(const_cast<void*>(sendbuffer),
+                                                      scratchpad,
+                                                      recvcount*get_world_size(comm),
+                                                      datatype,op,comm);
+    // return ret;
 }
 }/*namespace dccl*/
