@@ -4,6 +4,11 @@
 
 #include <derecho/mutils-serialization/SerializationSupport.hpp>
 
+/**
+ * @file blob.hpp
+ * @brief The Blob object for derecho RPCs.
+ */
+
 namespace dccl{
 
 enum object_memory_mode_t {

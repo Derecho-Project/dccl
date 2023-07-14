@@ -173,6 +173,35 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
     return ncclSuccess;
 }
 
+ncclResult_t ncclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
+    if (!comm || !comm->derecho_group_handle) {
+        dccl_error("{}: invalid comm handle.", __func__);
+        return ncclInvalidArgument;
+    }
+
+    if (CACHELINE_OFFSET(buffer) != 0) {
+        dccl_error("{}: buffer@{:p} is not cacheline aligned.", __func__, buffer);
+        return ncclInvalidArgument;
+    }
+
+    if (CACHELINE_OFFSET(size) != 0) {
+        dccl_error("{}: buffer size {} is not cacheline aligned.", __func__, size);
+        return ncclInvalidArgument;
+    }
+
+    GROUP_HANDLE(comm)->register_oob_memory(buffer,size);
+
+    return ncclSuccess;
+}
+
+ncclResult_t ncclDeregisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
+
+    // TODO: verify size...
+    GROUP_HANDLE(comm)->deregister_oob_memory(buffer);
+
+    return ncclSuccess;
+}
+
 ncclResult_t ncclAllReduce(const void*      sendbuff,
                            void*            recvbuff,
                            size_t           count,

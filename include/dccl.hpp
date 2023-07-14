@@ -100,7 +100,7 @@ ncclResult_t pncclCommInitAll(ncclComm_t* comm, int ndev, const int* devlist);
  */
 
 /**
- * @brief   Initialize the communication infrastructure
+ * @brief   Initialize the communication infrastructure.
  * @param[out]  comm    Pointer to a `ncclComm_t` object to be initialized
  *
  * @return      Error code
@@ -108,12 +108,39 @@ ncclResult_t pncclCommInitAll(ncclComm_t* comm, int ndev, const int* devlist);
 ncclResult_t  ncclCommInit(ncclComm_t* comm);
 
 /**
- * @brief   finalize the communication infrastructure
+ * @brief   Finalize the communication infrastructure
+ *
  * @param[in]   comm    An initialzied `ncclComm_t` object to be finalized.
  *
  * @return      Error code
  */
 ncclResult_t  ncclCommFinalize(ncclComm_t comm);
+
+/**
+ * @brief   Register user-allocated memory as cache to DCCL.
+ * Using registered memory in DCCL can avoid on-demand registeration on the critical path. We recommend doing so to
+ * improve the performance. Also, the address and size of memory  registered has to be cacheline aligned.
+ *
+ * @param[in]   comm    An initialzied `ncclComm_t` object to be finalized.
+ * @param[in]   buffer  The address of the memory buffer to be registered.
+ * @param[in]   size    The size of the buffer.
+ *
+ * @throws      Runtime error might be raised on error.
+ * @return      Error code.
+ */
+ncclResult_t  dcclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size);
+
+/**
+ * @brief   Deregister a pre-registered user-allocated memory region from DCCL.
+ *
+ * @param[in]   comm    An initialzied `ncclComm_t` object to be finalized.
+ * @param[in]   buffer  The address of the registered memory buffer.
+ * @param[in]   size    The size of the buffer. Additional check on size would be performed if given.
+ *
+ * @throws      Runtime error might be raised on error.
+ * @return      Error code.
+ */
+ncclResult_t  dcclDeregisterCacheMemory(ncclComm_t comm, void* buffer, size_t size = 0UL);
 
 /**
  * @brief All-Reduce API
