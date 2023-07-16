@@ -1,5 +1,6 @@
 #pragma once
-#include <sys/types.h>
+#include <cstdint>
+#include <cstddef>
 
 /**
  * @file    dccl.hpp
@@ -19,7 +20,6 @@
  * `using namespace dccl;` is recommended for application code.
  */
 namespace dccl {
-
 
 /**
  * @brief   Error types
@@ -54,6 +54,9 @@ typedef enum { ncclInt8       = 0, ncclChar       = 0,
 #endif
 } ncclDataType_t;
 
+/**
+ * @brief   The dummy Operator.
+ */
 typedef enum { ncclNumOps_dummy = 5 } ncclRedOp_dummy_t;
 
 /**
@@ -77,12 +80,12 @@ typedef enum { ncclSum        = 0,
              } ncclRedOp_t;
 
 /**
- * @brief   DCCL communication type
+ * @brief   The opaque DCCL communicator struct
  */
-struct dcclComm {
-    void* derecho_group_handle;
-    void* derecho_group_object;
-};
+struct dcclComm;
+/**
+ * @brief   DCCL communicator type
+ */
 typedef struct dcclComm* ncclComm_t ;
 
 /* dccl init rank is slightly different, the rank and world size information
@@ -95,7 +98,7 @@ ncclResult_t pncclCommInitAll(ncclComm_t* comm, int ndev, const int* devlist);
 */
 
 /**
- * @defgroup DCCL APIs
+ * @defgroup api The DCCL APIs
  * @{
  */
 
@@ -191,7 +194,7 @@ ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
  *
  * @return      Error code
  */
-ncclResult_t ncclReduceScatter(const void* sendbuffer, void* recvbuff,
+ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
     size_t recvcount, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
 
 /**
@@ -199,7 +202,7 @@ ncclResult_t ncclReduceScatter(const void* sendbuffer, void* recvbuff,
  */
 
 /**
- * @defgroup DCCL helper functions and macros
+ * @defgroup helpers DCCL helper functions and macros
  * @{
  */
 
@@ -211,6 +214,25 @@ ncclResult_t ncclReduceScatter(const void* sendbuffer, void* recvbuff,
  * @return      The offset of `addr` in a cacheline.
  */
 #define CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CLSZ )
+
+/**
+ * @brief Get the world size
+ *
+ * @param[in]   comm            The DCCL communication object.
+ *
+ * @return      The number of members in the shard.
+ */
+uint32_t dcclGetWorldSize(ncclComm_t comm);
+
+/**
+ * @brief Get my rank
+ *
+ * @param[in]   comm            The DCCL communication object.
+ *
+ * @return      My rank in the shard, starting from 0.
+ */
+uint32_t dcclGetMyRank(ncclComm_t comm);
+
 
 /**
  * @}

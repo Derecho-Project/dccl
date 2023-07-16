@@ -97,9 +97,9 @@ install(TARGETS dccl EXPORT dcclTargets
 if (DOXYGEN_FOUND)
     # create docs
     doxygen_add_docs(docs
-        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
         ALL
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        CONFIG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 endif()

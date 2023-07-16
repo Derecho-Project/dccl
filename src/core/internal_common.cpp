@@ -10,9 +10,15 @@ namespace dccl {
 
 std::shared_ptr<spdlog::logger>& getDcclLogger() {
     static std::shared_ptr<spdlog::logger> _logger;
+/**
+ * @cond Doxygen_Suppressed
+ */
 #define DCCL_LOGGER_UNINITIALIZED   0
 #define DCCL_LOGGER_INITIALIZING    1
 #define DCCL_LOGGER_INITIALIZED     2
+/**
+ * @endcond
+ */
     static std::atomic<uint32_t> _logger_state(DCCL_LOGGER_UNINITIALIZED);
     uint32_t expected = DCCL_LOGGER_UNINITIALIZED;
     if (_logger_state.compare_exchange_strong(

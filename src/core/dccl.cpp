@@ -19,11 +19,35 @@ using namespace derecho;
 
 namespace dccl {
 
+/**
+ * @brief   Validate DCCL communicator
+ * If communicator is not initialized, throw an exception
+ *
+ * @param[in]   comm        The communicator object.
+ *
+ * @throw   std::runtime_error  Runtime error will be raised on null communicator.
+ */
 #define VALIDATE_COMM(comm) \
 if (!comm || !comm->derecho_group_handle) { \
     dccl_error("{}: invalid comm handle.", __func__); \
     throw std::runtime_error (std::string(__func__) + " is unable to handle invalid comm handle."); \
 }
+
+uint32_t dcclGetWorldSize(ncclComm_t comm) {
+    return _get_shard_members<DCCLSubgroupType>(comm).size();
+}
+
+uint32_t dcclGetMyRank(ncclComm_t comm) {
+    auto my_id = GROUP_HANDLE(comm)->get_my_id();
+    auto shard_members = _get_shard_members<DCCLSubgroupType>(comm);
+    uint32_t my_rank = 0;
+    while(my_rank < shard_members.size() && shard_members.at(my_rank) != my_id) {
+        my_rank ++;
+    }
+    assert (my_rank < shard_members.size());
+    return my_rank;
+}
+
 
 /**
  * @brief The initial size of the scratchpad memory is 64 MB per thread.
@@ -108,6 +132,10 @@ static ncclResult_t verify_scratchpad(size_t size, ncclComm_t comm) {
     return ret;
 }
 
+/**
+ * @brief   Initialize receive buffer(Deprecated API)
+ * @deprecated  Stop using this function.
+ */
 template<typename DT>
 ncclResult_t init_receive_buf(void* recvbuf,
                               size_t count,
@@ -230,35 +258,6 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
     return ncclSuccess;
 }
 
-ncclResult_t ncclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
-    if (!comm || !comm->derecho_group_handle) {
-        dccl_error("{}: invalid comm handle.", __func__);
-        return ncclInvalidArgument;
-    }
-
-    if (CACHELINE_OFFSET(buffer) != 0) {
-        dccl_error("{}: buffer@{:p} is not cacheline aligned.", __func__, buffer);
-        return ncclInvalidArgument;
-    }
-
-    if (CACHELINE_OFFSET(size) != 0) {
-        dccl_error("{}: buffer size {} is not cacheline aligned.", __func__, size);
-        return ncclInvalidArgument;
-    }
-
-    GROUP_HANDLE(comm)->register_oob_memory(buffer,size);
-
-    return ncclSuccess;
-}
-
-ncclResult_t ncclDeregisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
-
-    // TODO: verify size...
-    GROUP_HANDLE(comm)->deregister_oob_memory(buffer);
-
-    return ncclSuccess;
-}
-
 ncclResult_t ncclAllReduce(const void*      sendbuff,
                            void*            recvbuff,
                            size_t           count,
@@ -346,13 +345,26 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
 
 ncclResult_t dcclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
     VALIDATE_COMM(comm);
+
+    if (CACHELINE_OFFSET(buffer) != 0) {
+        dccl_error("{}: buffer@{:p} is not cacheline aligned.", __func__, buffer);
+        return ncclInvalidArgument;
+    }
+
+    if (CACHELINE_OFFSET(size) != 0) {
+        dccl_error("{}: buffer size {} is not cacheline aligned.", __func__, size);
+        return ncclInvalidArgument;
+    }
+
     GROUP_HANDLE(comm)->register_oob_memory(buffer,size);
+    return ncclSuccess;
 }
 
 ncclResult_t dcclDeregisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
     VALIDATE_COMM(comm);
     //TODO: check size
     GROUP_HANDLE(comm)->deregister_oob_memory(buffer);
+    return ncclSuccess;
 }
 
 ncclResult_t ncclReduceScatter(const void*      sendbuffer,
@@ -363,15 +375,19 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
                                ncclComm_t       comm) {
     VALIDATE_COMM(comm);
 
-    // ncclResult_t ret = ncclSuccess;
+    ncclResult_t ret = ncclSuccess;
 
     //TODO: This is a brutal force wrapper for test. Do the following afterward:
     // - prepare a writable send buffer
     // - copy the corresponding block to destination.
+    ret = verify_scratchpad(recvcount*dcclGetWorldSize(comm),comm);
+    if (ret != ncclSuccess) {
+        return ret;
+    }
     return algorithm::reduce_scatter_recursive_halving(const_cast<void*>(sendbuffer),
-                                                      scratchpad,
-                                                      recvcount*get_world_size(comm),
-                                                      datatype,op,comm);
+                                                       scratchpad,
+                                                       recvcount*dcclGetWorldSize(comm),
+                                                       datatype,op,comm);
     // return ret;
 }
 }/*namespace dccl*/

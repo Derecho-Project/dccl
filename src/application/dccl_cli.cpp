@@ -8,6 +8,8 @@
 using namespace dccl;
 
 const char* help_string = 
+    "\t--api,-a     name of the DCCL api to be tested. Full api list:\n"
+    "\t             scatter,gather,broadcast,send,recv,reduce,all_reduce,reduce_scatter,all_gather\n"
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
     "\t--repeat,-r  number of operations for evaluation, defaulted to 1000.\n"
     "\t--type,-t    type of the data, defaulted to uint32. Full type list:\n"
@@ -90,6 +92,7 @@ static void print_help(const char* command_name) {
 int main(int argc, char** argv) {
     // step 0 - parameters
     static struct option long_options[] = {
+        {"api",     required_argument,  0,  'a'},
         {"warmup",  required_argument,  0,  'w'},
         {"repeat",  required_argument,  0,  'r'},
         {"type",    required_argument,  0,  't'},
@@ -100,8 +103,8 @@ int main(int argc, char** argv) {
     };
 
     int c;
-    int digit_optind = 0;
 
+    std::string api;
     size_t warmup_count = 0;
     size_t repeat_count = 1000;
     ncclDataType_t data_type = ncclUint32;
@@ -110,13 +113,16 @@ int main(int argc, char** argv) {
 
     while (true) {
         int option_index = 0;
-        c = getopt_long(argc,argv, "w:r:t:o:c:h", long_options, &option_index);
+        c = getopt_long(argc,argv, "a:w:r:t:o:c:h", long_options, &option_index);
 
         if (c == -1) {
             break;
         }
 
         switch (c) {
+        case 'a':
+            api = optarg;
+            break;
         case 'w':
             warmup_count = std::stoul(optarg);
             break;
@@ -140,7 +146,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::cout << "dccl allreduce evaluation with the following configuration:" << std::endl;
+    std::cout << "dccl api evaluation with the following configuration:" << std::endl;
+    std::cout << "\tapi:" << api << std::endl;
     std::cout << "\twarmup:" << warmup_count << std::endl;
     std::cout << "\trepeat:" << repeat_count << std::endl;
     std::cout << "\ttype:" << data_type << std::endl;
@@ -159,9 +166,8 @@ int main(int argc, char** argv) {
     // step 2 - allocating data
     void* sendbuf = nullptr;
     void* recvbuf = nullptr;
-    uint64_t cacheline_sz = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
-    if (posix_memalign(&sendbuf,cacheline_sz,data_count*size_of_type(data_type)) ||
-        posix_memalign(&recvbuf,cacheline_sz,data_count*size_of_type(data_type))) {
+    if (posix_memalign(&sendbuf,CLSZ,data_count*size_of_type(data_type)) ||
+        posix_memalign(&recvbuf,CLSZ,data_count*size_of_type(data_type))) {
         std::cerr << "Failed to allocate " << data_count*size_of_type(data_type) << " bytes" << std::endl;
         std::cerr << "Error:" << std::strerror(errno) << std::endl;
         ncclCommFinalize(comm);
@@ -170,14 +176,26 @@ int main(int argc, char** argv) {
 
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
-        ret = ncclAllReduce(sendbuf,recvbuf,data_count,data_type,operation,comm); \
+        if (api == "allreduce") { \
+            ret = ncclAllReduce(sendbuf,recvbuf,data_count,data_type,operation,comm); \
+        } else if (api == "reduce_scatter") { \
+            ret = ncclReduceScatter(sendbuf,recvbuf,data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
+        } else { \
+            ret = ncclInvalidArgument; \
+        } \
         if (ret != ncclSuccess) { \
-            std::cerr << "all reduce failed with error:" << ret << std::endl; \
+            std::cerr << "API:" << api << " failed with error:" << ret << std::endl; \
             ncclCommFinalize(comm); \
             return 2; \
         } \
     }
 
+    // TODO: temporary for reduce_scatter test.
+    if (api == "reduce_scatter") {
+        if (dcclRegisterCacheMemory(comm,sendbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
+            std::cout << "failed to register memory as dccl cache." << std::endl;
+        }
+    }
     // step 3 - warmup
     std::cout << "warm up..." << std::endl;
     RUN_WITH_COUNTER(warmup_count);
@@ -192,6 +210,12 @@ int main(int argc, char** argv) {
     uint64_t end_ts = get_time();
     std::cout << "done." << std::endl;
 
+    // TODO: temporary for reduce_scatter test.
+    if (api == "reduce_scatter") {
+        if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
+            std::cout << "failed to register memory as dccl cache." << std::endl;
+        }
+    }
     // step 5 - finalize comm
     ret = ncclCommFinalize(comm);
     if (ret != ncclSuccess) {

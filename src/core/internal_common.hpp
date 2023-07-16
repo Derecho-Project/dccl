@@ -22,7 +22,9 @@ namespace dccl {
  *              dbg_trace, dbg_debug, dbg_warn, dbg_error, ...
  */
 std::shared_ptr<spdlog::logger>& getDcclLogger();
-
+/**
+ * @cond Doxygen_Suppressed
+ */
 #define dccl_trace(...) dbg_trace(getDcclLogger(), __VA_ARGS__)
 #define dccl_debug(...) dbg_debug(getDcclLogger(), __VA_ARGS__)
 #define dccl_info(...)  dbg_info(getDcclLogger(), __VA_ARGS__)
@@ -30,6 +32,9 @@ std::shared_ptr<spdlog::logger>& getDcclLogger();
 #define dccl_error(...) dbg_error(getDcclLogger(), __VA_ARGS__)
 #define dccl_crit(...)  dbg_crit(getDcclLogger(), __VA_ARGS__)
 #define dccl_flush()    dbg_flush(getDcclLogger())
+/**
+ * @endcond
+ */
 
 /**
  * @brief The DCCL Subgroup Class type
@@ -38,6 +43,10 @@ std::shared_ptr<spdlog::logger>& getDcclLogger();
 class DCCLSubgroupType : public mutils::ByteRepresentable,
                          public GroupReference {
 public:
+    /**
+     * @brief   The receive buffer
+     * It has to be atomic for concurrent access.
+     */
     std::atomic<void*>  recvbuf;
 
     /**
@@ -57,7 +66,10 @@ public:
      */
     REGISTER_RPC_FUNCTIONS(DCCLSubgroupType,ORDERED_TARGETS(reduce));
 
-    // serialization support
+    /**
+     * serialization support
+     * @cond    Doxygen_Suppressed
+     */
     virtual std::size_t to_bytes(uint8_t*) const override {return 0;}
 
     virtual void post_object(const std::function<void(uint8_t const* const, std::size_t)>&) const override {}
@@ -78,9 +90,30 @@ public:
         return mutils::context_ptr<const DCCLSubgroupType>{new DCCLSubgroupType()};
     }
     void ensure_registered(mutils::DeserializationManager&) {}
+    /**
+     * @endcond
+     */
     
-    // constructors
+    /**
+     * @brief   The default constructor
+     */
     DCCLSubgroupType():recvbuf(nullptr) {}
+};
+
+/**
+ * @brief the DCCL communicator type definition
+ *
+ * We put it in source to hide it from DCCL applications.
+ */
+struct dcclComm {
+    /**
+     * @brief   Pointer to the derecho group
+     */
+    void* derecho_group_handle;
+    /**
+     * @brief   Pointer to the `DCCLSubgroupType` object living in Derecho.
+     */
+    void* derecho_group_object;
 };
 
 /**
@@ -142,35 +175,6 @@ inline auto get_dccl_shard_members(ncclComm_t comm) {
 }
 
 /**
- * @brief Get the world size
- *
- * @param[in]   comm            The DCCL communication object.
- *
- * @return      The number of members in the shard.
- */
-inline uint32_t get_world_size(ncclComm_t comm) {
-    return _get_shard_members<DCCLSubgroupType>(comm).size();
-}
-
-/**
- * @brief Get my rank
- *
- * @param[in]   comm            The DCCL communication object.
- *
- * @return      My rank in the shard, starting from 0.
- */
-inline uint32_t get_my_rank(ncclComm_t comm) {
-    auto my_id = GROUP_HANDLE(comm)->get_my_id();
-    auto shard_members = _get_shard_members<DCCLSubgroupType>(comm);
-    uint32_t my_rank = 0;
-    while(my_rank < shard_members.size() && shard_members.at(my_rank) != my_id) {
-        my_rank ++;
-    }
-    assert (my_rank < shard_members.size());
-    return my_rank;
-}
-
-/**
  * @brief Get the size (in bytes) of DCCL data types.
  * 
  * @param[in]   datatype    The DCCL data type
@@ -203,10 +207,12 @@ inline size_t size_of_type(ncclDataType_t datatype) {
 /**
  * @brief Macro expanding for specific DCCL data type.
  * TODO: we should support Float16 here using something like:
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~{.c}
+ *  case ncclFloat16:
  * #if __cplusplus >= 202302L
- * #include <stdfloat>
+ *      expr<float16_t>(__VA_ARGS__);
  * #endif
- *
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~
  * @param[in]   datatype        The data type
  * @param[in]   expr            The expression suffixed with `<data type>`, like `<int32_t>`
  * @param[in]   ...             the arguments passed to `expr<data type>()`
@@ -236,6 +242,9 @@ inline size_t size_of_type(ncclDataType_t datatype) {
         break; \
     case ncclFloat64: \
         expr<double>(__VA_ARGS__); \
+        break; \
+    case ncclFloat16: \
+    default: \
         break; \
     }
 
@@ -365,7 +374,9 @@ ncclResult_t do_reduce(const void*  sendbuf,
 
     dccl_trace("{}:head_count={},pack_count={},num_pack={},tail_count={}",
                       __func__,head_count,pack_count,num_pack,tail_count);
-
+/**
+ * @cond Doxygen_Suppressed
+ */
 #define OP_SUM(r,s) (r)+=(s)
 #define OP_MIN(r,s) if((r)>(s))(r)=(s)
 #define OP_MAX(r,s) if((r)<(s))(r)=(s)
@@ -381,7 +392,9 @@ ncclResult_t do_reduce(const void*  sendbuf,
         for(size_t i=0;i<tail_count;i++) { \
             OP(precv[count-1-i],psend[count-1-i]); \
         }
-
+/**
+ * @endcond
+ */
     switch(op) {
     case ncclSum:
         REDUCE(OP_SUM);

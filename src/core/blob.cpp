@@ -172,7 +172,9 @@ Blob& Blob::operator=(const Blob& other) {
 
     return *this;
 }
-
+/**
+ * @cond Doxygen_Suppressed
+ */
 std::size_t Blob::to_bytes(uint8_t* v) const {
     ((std::size_t*)(v))[0] = size;
     if(size > 0) {
@@ -232,5 +234,7 @@ mutils::context_ptr<const Blob> Blob::from_bytes_noalloc_const(mutils::Deseriali
 std::unique_ptr<Blob> Blob::from_bytes(mutils::DeserializationManager*, const uint8_t* const v) {
     return std::make_unique<Blob>(v + sizeof(std::size_t), ((std::size_t*)(v))[0]);
 }
-
-}
+/**
+ * @endcond
+ */
+} // namespace dccl
