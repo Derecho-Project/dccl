@@ -56,8 +56,9 @@ ncclResult_t reduce_scatter_recursive_halving(
 
         dccl_trace("{}: reduce_scatter step-{}", __func__, step);
 
-        uint32_t peer_rank = (my_rank&(~((1<<step)-1))) + (my_rank+(1<<step))%(1<<(step+1));
+        uint32_t peer_rank = (my_rank&(~((1<<(step+1))-1))) + (my_rank+(1<<step))%(1<<(step+1));
         auto peer_id = shard_members.at(peer_rank);
+        dccl_trace("{}: current peer is rank:{}(node_id:{}).", __func__, peer_rank, peer_id);
         if (((my_rank>>step)&1) == 0) {
             send_buffer = __LOWER_HALF_PTR__(send_buffer,step_bsize);
             recv_buffer = __UPPER_HALF_PTR__(recv_buffer,step_bsize);

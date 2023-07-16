@@ -104,17 +104,19 @@ static ncclResult_t verify_scratchpad(size_t size, ncclComm_t comm) {
                 dccl_error("{} is unable to deregister existing scratchpad. "
                            "See {}:{}",
                            __func__, __FILE__, __LINE__);
+                return ret;
             }
-            return ret;
-        }
-        scratchpad = realloc(scratchpad,new_size);
 
-        if (!scratchpad) {
+            free(scratchpad);
             scratchpad_size = 0;
-            dccl_error("{} is unable to realloc memory of size {}, error = {}. See {}:{}",
-                       __func__, new_size, strerror(errno), __FILE__, __LINE__);
+        }
+
+        if(posix_memalign(&scratchpad,CLSZ,new_size) != 0) {
+            dccl_error("{} is unable to allocate memory of size {}, error = {}, See {}:{}",
+                        __func__, new_size, strerror(errno), __FILE__, __LINE__);
             return ncclSystemError;
         }
+        scratchpad_size = new_size;
 
         ret = dcclRegisterCacheMemory(comm, scratchpad, new_size);
         if (ret != ncclSuccess) {
