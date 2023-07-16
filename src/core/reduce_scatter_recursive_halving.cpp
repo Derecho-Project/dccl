@@ -67,7 +67,7 @@ ncclResult_t reduce_scatter_recursive_halving(
             recv_buffer = __LOWER_HALF_PTR__(recv_buffer,step_bsize);
         }
         step_bsize = (step_bsize>>1);
-        dccl_trace("STEP {}, me{}:id-{} <--> peer{}:id-{}, data size = {} Bytes", 
+        dccl_trace("step-{}, me{}:id-{} <--> peer{}:id-{}, data size = {} Bytes",
                    my_rank, shard_members.at(my_rank), 
                    peer_rank, peer_id, step_bsize);
         struct iovec siov,riov;

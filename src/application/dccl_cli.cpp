@@ -173,6 +173,10 @@ int main(int argc, char** argv) {
         ncclCommFinalize(comm);
         return 1;
     }
+    // initialize each byte of sendbuf to 1
+    memset(sendbuf,1,data_count*size_of_type(data_type));
+    // zero recvbuf
+    bzero(recvbuf,data_count*size_of_type(data_type));
 
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
@@ -216,6 +220,11 @@ int main(int argc, char** argv) {
             std::cout << "failed to register memory as dccl cache." << std::endl;
         }
     }
+
+    // free data
+    free(sendbuf);
+    free(recvbuf);
+
     // step 5 - finalize comm
     ret = ncclCommFinalize(comm);
     if (ret != ncclSuccess) {
