@@ -25,7 +25,7 @@ std::shared_ptr<spdlog::logger>& getDcclLogger() {
                 expected,
                 DCCL_LOGGER_INITIALIZING,
                 std::memory_order_acq_rel)) {
-        _logger = LoggerFactory::createLogger("DCCL");
+        _logger = LoggerFactory::createLogger("DCCL","trace");
         _logger_state.store(DCCL_LOGGER_INITIALIZED,std::memory_order_acq_rel);
     }
     // make sure initialization finished by concurrent callers
