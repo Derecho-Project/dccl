@@ -71,9 +71,9 @@ ncclResult_t all_gather_recursive_doubling (
         riov.iov_len    = step_bsize;
         SUBGROUP_HANDLE(comm).oob_send(shard_members.at(peer_rank),&siov,1);
         SUBGROUP_HANDLE(comm).oob_recv(shard_members.at(peer_rank),&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,100); // TODO: change this according to message size. 
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,30000); // TODO: change this according to message size. 
                                                                         // This might affect p2p heart beat
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,100); // TODO: change this according to message size. 
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,30000); // TODO: change this according to message size. 
                                                                         // This might affect p2p heart beat
         step_bsize = (step_bsize<<1);
     }
