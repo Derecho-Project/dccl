@@ -268,13 +268,14 @@ inline size_t size_of_type(ncclDataType_t datatype) {
 template<typename T>
 inline T reverse_bits(const T x, size_t nbits = sizeof(T)*8) {
     assert(nbits <= sizeof(T)*8);
-    T rx = ((~static_cast<T>(0))<<nbits);
+    T rx = ((x)>>nbits);
     T tx = x;
 
     for (size_t p=0;p<nbits;p++) {
         rx = ((rx << 1) | (tx&1));
         tx = (tx >> 1);
     }
+
     return rx;
 }
 

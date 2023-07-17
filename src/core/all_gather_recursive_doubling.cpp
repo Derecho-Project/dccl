@@ -34,50 +34,40 @@ ncclResult_t all_gather_recursive_doubling (
     }
     const uint32_t my_rank  = dcclGetMyRank(comm);
     const uint32_t exponent = log_two(world_size);
-    // const uint32_t my_slice = reverse_bits(my_rank,exponent);
     auto shard_members      = get_dccl_shard_members(comm);
 
-    void* send_buffer = nullptr; // pointer to the data to send in a step
-    void* recv_buffer = nullptr; // pointer to the buffer to recv in a step
     size_t step_bsize = slice_size;  // size of the buffer in bytes to be processed in a step
-/**
- * @cond Doxygen_Suppressed.
- */
-#define __UPPER_HALF_PTR__(ptr,bsize)   (ptr)
-#define __LOWER_HALF_PTR__(ptr,bsize)   reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(ptr) + (bsize>>1))
-/**
- * @endcond
- */
+
     dccl_trace("{}: STEP 2: prepare buffer and exchange data. Buffer = {} bytes @ {:p} ",
                __func__, count*data_entry_size, buffer);
 
+    uint32_t send_block = reverse_bits(my_rank,exponent);
+
     for (uint32_t step = 0; step < exponent; step ++) {
 
-        dccl_trace("{}: all_gather step-{}", __func__, step);
-
-        uint32_t peer_rank = (my_rank&(~((1<<(exponent-step))-1))) + my_rank+(1<<(exponent-step-1))%(1<<(exponent-step));
+        uint32_t peer_rank = (my_rank&(~((1<<(exponent-step))-1))) + (my_rank+(1<<(exponent-step-1)))%(1<<(exponent-step));
         auto peer_id = shard_members.at(peer_rank);
-        dccl_trace("{}: current peer is rank:{}(node_id:{}).", __func__, peer_rank, peer_id);
 
         if (step > 0) {
-            if ((my_rank>>step)&1) {
-                // doubling low
-                send_buffer = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(send_buffer) - step_bsize/2);
-            }
-        } else {
-            send_buffer = 
-                reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer)+reverse_bits(my_rank)*slice_size);
+            send_block = send_block & (~(1<<(step-1)));
         }
-        recv_buffer = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer)^(1<<(step))); 
-
-        dccl_trace("step-{}, me{}:id-{} <--> peer{}:id-{}, data size = {} Bytes, recv_buffer = {:p}, send_buffer = {:p}",
+        uint32_t recv_block = send_block^(1<<step);
+        dccl_trace("step-{}, me{}:id-{} <--> peer{}:id-{}, data size = {} Bytes, recv_block = {}, send_block = {}",
                    step, my_rank, shard_members.at(my_rank), 
-                   peer_rank, peer_id, step_bsize, recv_buffer, send_buffer);
+                   peer_rank, peer_id, step_bsize, recv_block, send_block);
 
+        /**
+         * @cond Doxygen_Suppressed
+         */
+#define BLOCK_ID_TO_BUF_ADDR(id) \
+        reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (id * slice_size))
+        /**
+         * @endcond
+         */
         struct iovec siov,riov;
-        siov.iov_base   = send_buffer;
+        siov.iov_base   = BLOCK_ID_TO_BUF_ADDR(send_block);
         siov.iov_len    = step_bsize;
-        riov.iov_base   = recv_buffer;
+        riov.iov_base   = BLOCK_ID_TO_BUF_ADDR(recv_block);
         riov.iov_len    = step_bsize;
         SUBGROUP_HANDLE(comm).oob_send(shard_members.at(peer_rank),&siov,1);
         SUBGROUP_HANDLE(comm).oob_recv(shard_members.at(peer_rank),&riov,1);
@@ -85,7 +75,7 @@ ncclResult_t all_gather_recursive_doubling (
                                                                         // This might affect p2p heart beat
         SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,100); // TODO: change this according to message size. 
                                                                         // This might affect p2p heart beat
-        step_bsize = (step_bsize>>1);
+        step_bsize = (step_bsize<<1);
     }
 
     dccl_trace("{}: Finished.", __func__);

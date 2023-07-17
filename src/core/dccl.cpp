@@ -386,10 +386,16 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
     if (ret != ncclSuccess) {
         return ret;
     }
-    return algorithm::reduce_scatter_recursive_halving(const_cast<void*>(sendbuffer),
-                                                       scratchpad,
-                                                       recvcount*dcclGetWorldSize(comm),
-                                                       datatype,op,comm);
-    // return ret;
+    ret =   algorithm::reduce_scatter_recursive_halving(const_cast<void*>(sendbuffer),
+                                                        scratchpad,
+                                                        recvcount*dcclGetWorldSize(comm),
+                                                        datatype,op,comm);
+    if (ret != ncclSuccess) {
+        return ret;
+    }
+    ret =   algorithm::all_gather_recursive_doubling(const_cast<void*>(sendbuffer),
+                                                     recvcount*dcclGetWorldSize(comm),
+                                                     datatype,comm);
+    return ret;
 }
 }/*namespace dccl*/
