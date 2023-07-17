@@ -50,7 +50,8 @@ ncclResult_t reduce_scatter_recursive_halving(
 /**
  * @endcond
  */
-    dccl_trace("{}: STEP 2: prepare buffer and exchange data.", __func__);
+    dccl_trace("{}: STEP 2: prepare buffer and exchange data. Buffer = {} bytes @ {:p} ",
+               __func__, step_bsize, buffer);
 
     for (uint32_t step = 0; step < exponent; step ++) {
 
@@ -60,16 +61,16 @@ ncclResult_t reduce_scatter_recursive_halving(
         auto peer_id = shard_members.at(peer_rank);
         dccl_trace("{}: current peer is rank:{}(node_id:{}).", __func__, peer_rank, peer_id);
         if (((my_rank>>step)&1) == 0) {
-            send_buffer = __LOWER_HALF_PTR__(send_buffer,step_bsize);
+            send_buffer = __LOWER_HALF_PTR__(recv_buffer,step_bsize);
             recv_buffer = __UPPER_HALF_PTR__(recv_buffer,step_bsize);
         } else {
-            send_buffer = __UPPER_HALF_PTR__(send_buffer,step_bsize);
+            send_buffer = __UPPER_HALF_PTR__(recv_buffer,step_bsize);
             recv_buffer = __LOWER_HALF_PTR__(recv_buffer,step_bsize);
         }
         step_bsize = (step_bsize>>1);
-        dccl_trace("step-{}, me{}:id-{} <--> peer{}:id-{}, data size = {} Bytes",
-                   my_rank, shard_members.at(my_rank), 
-                   peer_rank, peer_id, step_bsize);
+        dccl_trace("step-{}, me{}:id-{} <--> peer{}:id-{}, data size = {} Bytes, recv_buffer = {:p}, send_buffer = {:p}",
+                   step, my_rank, shard_members.at(my_rank), 
+                   peer_rank, peer_id, step_bsize, recv_buffer, send_buffer);
         struct iovec siov,riov;
         siov.iov_base   = send_buffer;
         siov.iov_len    = step_bsize;
