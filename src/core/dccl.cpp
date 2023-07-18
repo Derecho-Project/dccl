@@ -266,6 +266,64 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                            ncclDataType_t   datatype,
                            ncclRedOp_t      op,
                            ncclComm_t       comm) {
+    ncclResult_t    ret =               ncclSuccess;
+    size_t          total_data_size =   count * size_of_type(datatype);
+
+    VALIDATE_COMM(comm);
+    uint32_t        world_size =        dcclGetWorldSize(comm);
+
+
+    // STEP 1: test constraints.
+    if (!IS_POWER_OF_TWO(world_size)) {
+        dccl_error("Support for non-power-of-two world size to be added yet.");
+        return ncclInvalidArgument;
+    }
+    if (count % world_size) {
+        dccl_error("Support for uneven data per node to be added yet.");
+        return ncclInvalidArgument;
+    }
+    if (CACHELINE_OFFSET(sendbuff) || CACHELINE_OFFSET(recvbuff)) {
+        dccl_warn("Either sendbuff@{:p} or recvbuff@{:p} is not cacheline ({} bytes) aligned. "
+                  "Possible performance degradation might occur.",
+                  sendbuff, recvbuff, CLSZ);
+    }
+    if (CACHELINE_OFFSET(total_data_size/world_size)) {
+        dccl_warn("Each block ({} bytes) for ReduceScatter operation is not cacheline ({} bytes) aligned. "
+                  "Possible performance degradation might occur.",
+                  total_data_size/world_size, CLSZ);
+    }
+
+    // STEP 2: check buffer
+    if (sendbuff != recvbuff) {
+        memcpy(recvbuff,sendbuff,total_data_size);
+    }
+
+    // STEP 3: reduce scatter
+    ret = verify_scratchpad(total_data_size>>1,comm);
+    if (ret != ncclSuccess) {
+        dccl_error("{} failed to verify scratchpad memory with size {}",
+                   __func__, total_data_size>>1);
+        return ret;
+    }
+    ret = algorithm::reduce_scatter_recursive_halving(recvbuff,scratchpad,count,datatype,op,comm);
+    if (ret != ncclSuccess) {
+        dccl_error("{}: reduce scatter failed.");
+        return ret;
+    }
+
+    // STEP 4: all gather:
+    ret = algorithm::all_gather_recursive_doubling(recvbuff,count,datatype,comm);
+
+    return ncclSuccess;
+}
+
+/* deprecated
+ncclResult_t ncclAllReduce(const void*      sendbuff,
+                           void*            recvbuff,
+                           size_t           count,
+                           ncclDataType_t   datatype,
+                           ncclRedOp_t      op,
+                           ncclComm_t       comm) {
     if (!comm || !comm->derecho_group_handle) {
         return ncclInvalidArgument;
     }
@@ -344,6 +402,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     group->barrier_sync();
     return ret;
 }
+*/
 
 ncclResult_t dcclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
     VALIDATE_COMM(comm);
@@ -386,16 +445,9 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
     if (ret != ncclSuccess) {
         return ret;
     }
-    ret =   algorithm::reduce_scatter_recursive_halving(const_cast<void*>(sendbuffer),
+    return   algorithm::reduce_scatter_recursive_halving(const_cast<void*>(sendbuffer),
                                                         scratchpad,
                                                         recvcount*dcclGetWorldSize(comm),
                                                         datatype,op,comm);
-    if (ret != ncclSuccess) {
-        return ret;
-    }
-    ret =   algorithm::all_gather_recursive_doubling(const_cast<void*>(sendbuffer),
-                                                     recvcount*dcclGetWorldSize(comm),
-                                                     datatype,comm);
-    return ret;
 }
 }/*namespace dccl*/
