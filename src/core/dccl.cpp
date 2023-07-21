@@ -88,7 +88,7 @@ static ncclResult_t verify_scratchpad(size_t size, ncclComm_t comm) {
     ncclResult_t ret = ncclSuccess;
 
     if (size > SCRATCHPAD_MAX_SIZE) {
-        dccl_error("{}: Unable to allocate a scratch of {} Bytes, which is bigger than {} Bytes. "
+        dccl_error("{}: Unable to allocate a scratchpad of {} Bytes, which is bigger than {} Bytes. "
                    "See {}:{}",
                    __func__, size, SCRATCHPAD_MAX_SIZE, __FILE__, __LINE__);
         return ncclInvalidArgument;

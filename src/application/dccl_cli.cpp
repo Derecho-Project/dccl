@@ -180,7 +180,7 @@ int main(int argc, char** argv) {
 
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
-        if (api == "allreduce") { \
+        if (api == "all_reduce") { \
             ret = ncclAllReduce(sendbuf,recvbuf,data_count,data_type,operation,comm); \
         } else if (api == "reduce_scatter") { \
             ret = ncclReduceScatter(sendbuf,recvbuf,data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
