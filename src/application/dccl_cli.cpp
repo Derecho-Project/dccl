@@ -194,12 +194,16 @@ int main(int argc, char** argv) {
         } \
     }
 
-    // TODO: temporary for reduce_scatter test.
-    if (api == "reduce_scatter") {
-        if (dcclRegisterCacheMemory(comm,sendbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
-            std::cout << "failed to register memory as dccl cache." << std::endl;
-        }
+    // The memory should be registered with dccl before passing to dccl APIs.
+    if (dcclRegisterCacheMemory(comm,sendbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
+        std::cerr << "Failed to register sendbuf@" << sendbuf << "to dccl." << std::endl;
+        return 1;
     }
+    if (dcclRegisterCacheMemory(comm,recvbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
+        std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
+        return 1;
+    }
+
     // step 3 - warmup
     std::cout << "warm up..." << std::endl;
     RUN_WITH_COUNTER(warmup_count);
@@ -214,11 +218,12 @@ int main(int argc, char** argv) {
     uint64_t end_ts = get_time();
     std::cout << "done." << std::endl;
 
-    // TODO: temporary for reduce_scatter test.
-    if (api == "reduce_scatter") {
-        if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
-            std::cout << "failed to register memory as dccl cache." << std::endl;
-        }
+    // deregister memory data
+    if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
+        std::cerr << "Failed to deregister sendbuf@" << sendbuf << "from dccl." << std::endl;
+    }
+    if (dcclDeregisterCacheMemory(comm,recvbuf) != ncclSuccess) {
+        std::cerr << "Failed to deregister recvbuf@" << recvbuf << "from dccl." << std::endl;
     }
 
     // free data
