@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <stdlib.h>
+#include <dccl/config.h>
 #include <derecho/utils/logger.hpp>
 #include "blob.hpp"
 
@@ -36,7 +37,7 @@ Blob::Blob(const uint8_t* const b, const decltype(size) s) :
         // uint8_t* t_bytes = PAGE_ALIGNED_NEW(s);
         // uint8_t* t_bytes = static_cast<uint8_t*>(malloc(s));
         uint8_t* t_bytes = nullptr;
-        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CLSZ, s)) {
+        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CACHELINE_SIZE, s)) {
             dbg_default_error("posix_memalign error:{}",strerror(errno));
         }
         assert(t_bytes);
@@ -57,7 +58,7 @@ Blob::Blob(const uint8_t* b, const decltype(size) s, bool emplaced) :
         // uint8_t* t_bytes = PAGE_ALIGNED_NEW(s);
         // uint8_t* t_bytes = static_cast<uint8_t*>(malloc(s));
         uint8_t* t_bytes = nullptr;
-        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CLSZ, s)) {
+        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CACHELINE_SIZE, s)) {
             dbg_default_error("posix_memalign error:{}",strerror(errno));
         }
         assert(t_bytes);
@@ -84,7 +85,7 @@ Blob::Blob(const Blob& other) :
     if(other.size > 0) {
         // uint8_t* t_bytes = static_cast<uint8_t*>(malloc(other.size));
         uint8_t* t_bytes = nullptr;
-        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CLSZ, other.size)) {
+        if(posix_memalign(reinterpret_cast<void**>(&t_bytes), CACHELINE_SIZE, other.size)) {
             dbg_default_error("posix_memalign error:{}",strerror(errno));
         }
         assert(t_bytes);
@@ -202,7 +203,7 @@ void Blob::post_object(const std::function<void(uint8_t const* const, std::size_
         // we have to instatiate the data. CAUTIOUS: this is inefficient. Please use BLOB_GENERATOR mode carefully.
         // uint8_t* local_bytes = static_cast<uint8_t*>(malloc(size));
         uint8_t* local_bytes = nullptr;
-        if(posix_memalign(reinterpret_cast<void**>(&local_bytes), CLSZ, size)) {
+        if(posix_memalign(reinterpret_cast<void**>(&local_bytes), CACHELINE_SIZE, size)) {
             dbg_default_error("posix_memalign error:{}",strerror(errno));
         }
         assert(local_bytes);

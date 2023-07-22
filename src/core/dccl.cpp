@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include <derecho/core/derecho.hpp>
 #include <derecho/utils/logger.hpp>
-#include <dccl.hpp>
+#include <dccl/dccl.hpp>
 #include "internal_common.hpp"
 #include "algorithms.hpp"
 #include "blob.hpp"
@@ -111,7 +111,7 @@ static ncclResult_t verify_scratchpad(size_t size, ncclComm_t comm) {
             scratchpad_size = 0;
         }
 
-        if(posix_memalign(&scratchpad,CLSZ,new_size) != 0) {
+        if(posix_memalign(&scratchpad,CACHELINE_SIZE,new_size) != 0) {
             dccl_error("{} is unable to allocate memory of size {}, error = {}, See {}:{}",
                         __func__, new_size, strerror(errno), __FILE__, __LINE__);
             return ncclSystemError;
@@ -285,12 +285,12 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     if (CACHELINE_OFFSET(sendbuff) || CACHELINE_OFFSET(recvbuff)) {
         dccl_warn("Either sendbuff@{:p} or recvbuff@{:p} is not cacheline ({} bytes) aligned. "
                   "Possible performance degradation might occur.",
-                  sendbuff, recvbuff, CLSZ);
+                  sendbuff, recvbuff, CACHELINE_SIZE);
     }
     if (CACHELINE_OFFSET(total_data_size/world_size)) {
         dccl_warn("Each block ({} bytes) for ReduceScatter operation is not cacheline ({} bytes) aligned. "
                   "Possible performance degradation might occur.",
-                  total_data_size/world_size, CLSZ);
+                  total_data_size/world_size, CACHELINE_SIZE);
     }
 
     // STEP 2: check buffer
@@ -450,4 +450,74 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
                                                         recvcount*dcclGetWorldSize(comm),
                                                         datatype,op,comm);
 }
+
+#ifdef ENABLE_EVALUATION
+Timestamp::Timestamp(size_t num_entries):
+    _log(nullptr),capacity(0),position(0) {
+    // lock it
+    pthread_spin_init(&lck,PTHREAD_PROCESS_PRIVATE);
+    pthread_spin_lock(&lck);
+
+    capacity = ((num_entries == 0) ? (1ul<<16) : num_entries) * sizeof(uint64_t);
+
+    if ( posix_memalign(reinterpret_cast<void**>(&_log), CACHELINE_SIZE, capacity) ) {
+        dccl_error("{} failed to allocate {} bytes for log space: {}. See {}:{}",
+                __func__, capacity, strerror(errno), __FILE__, __LINE__);
+        throw std::runtime_error("Failed to allocate memory for log space.");
+    }
+
+    // warm it up
+    for (int i=0; i<6; i++) {
+        bzero(_log,capacity);
+    }
+
+    // unlock
+    pthread_spin_unlock(&lck);
+}
+
+void Timestamp::instance_log(uint64_t tag, uint64_t rank, uint64_t extra) {
+    pthread_spin_lock(&lck);
+
+    _log[position] = tag;
+    _log[position+1] = rank;
+    _log[position+2] = extra;
+    _log[position+3] = get_time();
+    position += 4;
+
+    pthread_spin_unlock(&lck);
+}
+
+void Timestamp::instance_flush(const std::string& filename, bool clear) {
+    pthread_spin_lock(&lck);
+
+    std::ofstream outfile(filename);
+
+    outfile << "# tag rank extra tsns" << std::endl;
+    for (size_t i=0;i<(position>>2);i++) {
+        outfile << _log[i] << " " << _log[i+1] << " " << _log[i+2] << " " << _log[i+3] << std::endl;
+    }
+    outfile.close();
+
+    if (clear) {
+        _t.clear();
+    }
+
+    pthread_spin_unlock(&lck);
+}
+
+void Timestamp::instance_clear() {
+    pthread_spin_lock(&lck);
+    position=0;
+    pthread_spin_unlock(&lck);
+}
+
+Timestamp::~Timestamp() {
+    if (_log != nullptr) {
+        free(_log);
+    }
+}
+
+Timestamp Timestamp::_t{};
+
+#endif//ENABLE_EVALUATION
 }/*namespace dccl*/

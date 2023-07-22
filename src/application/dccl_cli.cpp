@@ -1,4 +1,4 @@
-#include <dccl.hpp>
+#include <dccl/dccl.hpp>
 #include <iostream>
 #include <cstring>
 #include <unistd.h>
@@ -166,8 +166,8 @@ int main(int argc, char** argv) {
     // step 2 - allocating data
     void* sendbuf = nullptr;
     void* recvbuf = nullptr;
-    if (posix_memalign(&sendbuf,CLSZ,data_count*size_of_type(data_type)) ||
-        posix_memalign(&recvbuf,CLSZ,data_count*size_of_type(data_type))) {
+    if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*size_of_type(data_type)) ||
+        posix_memalign(&recvbuf,CACHELINE_SIZE,data_count*size_of_type(data_type))) {
         std::cerr << "Failed to allocate " << data_count*size_of_type(data_type) << " bytes" << std::endl;
         std::cerr << "Error:" << std::strerror(errno) << std::endl;
         ncclCommFinalize(comm);

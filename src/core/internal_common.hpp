@@ -9,7 +9,7 @@
  */
 #include <atomic>
 #include <derecho/core/derecho.hpp>
-#include "dccl.hpp"
+#include <dccl/dccl.hpp>
 #include "blob.hpp"
 
 using namespace derecho;
@@ -363,8 +363,8 @@ ncclResult_t do_reduce(const void*  sendbuf,
      * 
      * The head and tail are handled separately.
      */
-    std::size_t             head_count = (CLSZ - reinterpret_cast<uint64_t>(recvbuf)%CLSZ)%CLSZ/sizeof(DT);
-    constexpr std::size_t   pack_count = CLSZ/sizeof(DT); // we assume CLSZ%sizeof(DT) == 0
+    std::size_t             head_count = (CACHELINE_SIZE - reinterpret_cast<uint64_t>(recvbuf)%CACHELINE_SIZE)%CACHELINE_SIZE/sizeof(DT);
+    constexpr std::size_t   pack_count = CACHELINE_SIZE/sizeof(DT); // we assume CACHELINE_SIZE%sizeof(DT) == 0
     std::size_t             num_pack = count/pack_count;
     std::size_t             tail_count = (pack_count + (count%pack_count) - head_count)%pack_count;
     // for the special case.

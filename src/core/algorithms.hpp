@@ -1,5 +1,5 @@
 #pragma once
-#include <dccl.hpp>
+#include <dccl/dccl.hpp>
 
 /**
  * @file algorithms.hpp

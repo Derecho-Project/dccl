@@ -8,5 +8,6 @@ add_library(core OBJECT
     all_gather_recursive_doubling.cpp)
 target_include_directories(core PRIVATE
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )

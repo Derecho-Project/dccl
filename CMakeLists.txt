@@ -14,7 +14,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # cacheline size
 execute_process(COMMAND getconf LEVEL1_DCACHE_LINESIZE OUTPUT_VARIABLE CLSZ)
 string(STRIP ${CLSZ} CLSZ)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCLSZ=${CLSZ}")
+set(CACHELINE_SIZE ${CLSZ})
 
 if (${USE_VERBS_API})
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_VERBS_API")
@@ -70,6 +70,9 @@ if(derecho_FOUND)
     include_directories(${derecho_INCLUDE_DIRS})
 endif()
 
+set(ENABLE_EVALUATION 1)
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/dccl/config.h)
+
 add_subdirectory(src/core)
 add_subdirectory(src/utils)
 
@@ -90,9 +93,13 @@ add_subdirectory(src/application)
 install(TARGETS dccl EXPORT dcclTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-    install(FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/dccl.hpp
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/dccl
+        ${CMAKE_CURRENT_BINARY_DIR}/include/dccl
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING
+        PATTERN "*.h"
+        PATTERN "*.hpp")
 
 if (DOXYGEN_FOUND)
     # create docs

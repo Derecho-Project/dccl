@@ -1,6 +1,12 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
+#include <dccl/config.h>
+#include <pthread.h>
+
+#ifdef ENABLE_EVALUATION
+#include <string>
+#endif//ENABLE_EVALUATION
 
 /**
  * @file    dccl.hpp
@@ -213,7 +219,7 @@ ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
  *
  * @return      The offset of `addr` in a cacheline.
  */
-#define CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CLSZ )
+#define CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CACHELINE_SIZE)
 
 /**
  * @brief Get the world size
@@ -233,7 +239,109 @@ uint32_t dcclGetWorldSize(ncclComm_t comm);
  */
 uint32_t dcclGetMyRank(ncclComm_t comm);
 
+/**
+ * @brief Evaluation utilities
+ */
+#ifdef ENABLE_EVALUATION
 
+/**
+ * @brief The timestamper implementation.
+ * Modified from [`derecho::cascade::TimestampLogger](https://github.com/Derecho-Project/cascade/blob/041639aab47a51b1ad12fabe13056a91d9ed4bda/include/cascade/utils.hpp#L438-L494)
+ */
+class Timestamp {
+private:
+    /**
+     * @brief Timestamp storage
+     * -# my rank
+     * -# tag id
+     * -# timestamp in nanosecond
+     * -# extra info
+     */
+    uint64_t* _log;
+
+    /**
+     * @brief capacity of the log
+     */
+    size_t capacity;
+
+    /**
+     * @brief the current position
+     */
+    size_t position;
+
+    /**
+     * @brief   Timestamp spinlock
+     */
+    pthread_spinlock_t lck;
+
+    /**
+     * @brief   Constructor
+     * @param   num_entries     The number of entries in the timestamp, defaulted to 2^16
+     */
+    Timestamp(size_t num_entries = 0);
+
+    /**
+     * @brief   Log the timestamp
+     *
+     * @param   tag         Event tag, a.k.a event identifier
+     * @param   rank        My rank
+     * @param   extra       Optional extra information
+     */
+    void instance_log(uint64_t tag, uint64_t rank, uint64_t extra = 0ull);
+
+    /**
+     * @brief   Flush the timestamps into a file
+     *
+     * @param   filename    The nameof the file
+     * @param   clear       Clear the log after flush if `clear == true`.
+     */
+    void instance_flush(const std::string& filename, bool clear=true);
+
+    /**
+     * @brief   Clear the timestamps
+     */
+    void instance_clear();
+
+    /**
+     * @brief The timestamp singleton.
+     */
+    static Timestamp _t;
+
+public:
+    /**
+     * @brief   The destructor
+     */
+    virtual ~Timestamp();
+
+    /**
+     * @brief log timestamp
+     *
+     * @param   tag         Event tag, a.k.a event identifier
+     * @param   rank        My rank
+     * @param   extra       Optional extra information
+     */
+    static inline void log(uint64_t tag, uint64_t rank, uint64_t extra = 0ull) {
+        _t.instance_log(tag,rank,extra);
+    }
+    
+    /**
+     * @brief Flush the timestamps into a file
+     *
+     * @param   filename    The nameof the file
+     * @param   clear       Clear the log after flush if `clear == true`.
+     */
+    static inline void flush(const std::string& filename, bool clear=true) {
+        _t.instance_flush(filename,clear);
+    }
+
+    /**
+     * @brief clear the timestamps
+     */
+    static inline void clear() {
+        _t.instance_clear();
+    }
+};
+#endif//ENABLE_EVALUATION
 /**
  * @}
  */
