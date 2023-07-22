@@ -95,7 +95,7 @@ static ncclResult_t verify_scratchpad(size_t size, ncclComm_t comm) {
     }
 
     size_t new_size = (scratchpad_size < size) ?
-        ((size<=SCRATCHPAD_INI_SIZE)? SCRATCHPAD_INI_SIZE : (size + getpagesize() - 1) % getpagesize()) : 0;
+        ((size<=SCRATCHPAD_INI_SIZE)? SCRATCHPAD_INI_SIZE : ((size + getpagesize() - 1) & ~(getpagesize()-1))) : 0;
 
     if (new_size > 0) {
         if (scratchpad_size > 0) {
