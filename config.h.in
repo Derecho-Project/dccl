@@ -1,0 +1,2 @@
+#cmakedefine    ENABLE_EVALUATION
+#cmakedefine    CACHELINE_SIZE  @CACHELINE_SIZE@
