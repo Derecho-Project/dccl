@@ -234,15 +234,16 @@ int main(int argc, char** argv) {
     free(sendbuf);
     free(recvbuf);
 
-    // step 5 - finalize comm
+    // step 5 -flush timestmap
+    std::cout << "flush timestamp..." << std::endl;
+    FLUSH_AND_CLEAR_TIMESTAMP("dccl_cli.tt");
+    std::cout << "...done" << std::endl;
+
+    // step 6 - finalize comm
     ret = ncclCommFinalize(comm);
     if (ret != ncclSuccess) {
         std::cerr << "failed to finalize the dccl communication." << std::endl;
     }
 
-    // step 6 -flush timestmap
-    std::cout << "flush timestamp..." << std::endl;
-    FLUSH_AND_CLEAR_TIMESTAMP("dccl.tt");
-    std::cout << "...done" << std::endl;
     return 0;
 }
