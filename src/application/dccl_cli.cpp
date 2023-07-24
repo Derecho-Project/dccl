@@ -155,6 +155,7 @@ int main(int argc, char** argv) {
     std::cout << "\tcount:" << data_count << std::endl;
     ncclComm_t comm;
     ncclResult_t ret;
+    uint32_t my_rank;
 
     // step 1 - initialize comm
     ret = ncclCommInit(&comm);
@@ -162,6 +163,7 @@ int main(int argc, char** argv) {
         std::cerr << "failed to initialize dccl communication." << std::endl;
         return ret;
     }
+    my_rank = dcclGetMyRank(comm);
 
     // step 2 - allocating data
     void* sendbuf = nullptr;
@@ -206,16 +208,18 @@ int main(int argc, char** argv) {
 
     // step 3 - warmup
     std::cout << "warm up..." << std::endl;
+    TIMESTAMP(TT_WARMUP_START,my_rank,0);
     RUN_WITH_COUNTER(warmup_count);
+    TIMESTAMP(TT_WARMUP_END,my_rank,0);
     std::cout << "done." << std::endl;
 
 
     // step 4 - run test
     uint64_t cnt = repeat_count;
     std::cout << "run test..." << std::endl;
-    uint64_t start_ts = get_time();
+    TIMESTAMP(TT_TEST_START,my_rank,0);
     RUN_WITH_COUNTER(cnt);
-    uint64_t end_ts = get_time();
+    TIMESTAMP(TT_TEST_END,my_rank,0);
     std::cout << "done." << std::endl;
 
     // deregister memory data
@@ -236,7 +240,9 @@ int main(int argc, char** argv) {
         std::cerr << "failed to finalize the dccl communication." << std::endl;
     }
 
-    // step 6 - get average
-    std::cout << "Average: " << ((end_ts-start_ts)/1000/repeat_count) << " us" << std::endl;
+    // step 6 -flush timestmap
+    std::cout << "flush timestamp..." << std::endl;
+    FLUSH_AND_CLEAR_TIMESTAMP("dccl.tt");
+    std::cout << "...done" << std::endl;
     return 0;
 }

@@ -266,6 +266,8 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                            ncclDataType_t   datatype,
                            ncclRedOp_t      op,
                            ncclComm_t       comm) {
+    uint32_t        my_rank = dcclGetMyRank(comm);
+    TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,op);
     ncclResult_t    ret =               ncclSuccess;
     size_t          total_data_size =   count * size_of_type(datatype);
 
@@ -297,6 +299,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     if (sendbuff != recvbuff) {
         memcpy(recvbuff,sendbuff,total_data_size);
     }
+    TIMESTAMP(TT_ALLREDUCE_MEMCPY,my_rank,op);
 
     // STEP 3: reduce scatter
     ret = verify_scratchpad(total_data_size>>1,comm);
@@ -310,9 +313,11 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
         dccl_error("{}: reduce scatter failed.");
         return ret;
     }
+    TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
 
     // STEP 4: all gather:
     ret = algorithm::all_gather_recursive_doubling(recvbuff,count,datatype,comm);
+    TIMESTAMP(TT_ALLREDUCE_ALLGATHER,my_rank,op);
 
     return ncclSuccess;
 }
@@ -458,9 +463,10 @@ Timestamp::Timestamp(size_t num_entries):
     pthread_spin_init(&lck,PTHREAD_PROCESS_PRIVATE);
     pthread_spin_lock(&lck);
 
-    capacity = ((num_entries == 0) ? (1ul<<16) : num_entries) * sizeof(uint64_t);
+    capacity = ((num_entries == 0) ? (1ul<<16) : num_entries);
+    size_t capacity_in_bytes = (capacity)*4*sizeof(uint64_t);
 
-    if ( posix_memalign(reinterpret_cast<void**>(&_log), CACHELINE_SIZE, capacity) ) {
+    if ( posix_memalign(reinterpret_cast<void**>(&_log), CACHELINE_SIZE,capacity_in_bytes) ) {
         dccl_error("{} failed to allocate {} bytes for log space: {}. See {}:{}",
                 __func__, capacity, strerror(errno), __FILE__, __LINE__);
         throw std::runtime_error("Failed to allocate memory for log space.");
@@ -468,7 +474,7 @@ Timestamp::Timestamp(size_t num_entries):
 
     // warm it up
     for (int i=0; i<6; i++) {
-        bzero(_log,capacity);
+        bzero(_log,capacity_in_bytes);
     }
 
     // unlock
@@ -476,33 +482,36 @@ Timestamp::Timestamp(size_t num_entries):
 }
 
 void Timestamp::instance_log(uint64_t tag, uint64_t rank, uint64_t extra) {
+    uint64_t ts = get_time();
     pthread_spin_lock(&lck);
 
-    _log[position] = tag;
-    _log[position+1] = rank;
-    _log[position+2] = extra;
-    _log[position+3] = get_time();
-    position += 4;
+    _log[(position<<2)] = tag;
+    _log[(position<<2)+1] = rank;
+    _log[(position<<2)+2] = extra;
+    _log[(position<<2)+3] = ts;
+    position ++;
 
     pthread_spin_unlock(&lck);
 }
 
 void Timestamp::instance_flush(const std::string& filename, bool clear) {
     pthread_spin_lock(&lck);
-
     std::ofstream outfile(filename);
 
+    outfile << "# number of entries:" << position << std::endl;
     outfile << "# tag rank extra tsns" << std::endl;
-    for (size_t i=0;i<(position>>2);i++) {
-        outfile << _log[i] << " " << _log[i+1] << " " << _log[i+2] << " " << _log[i+3] << std::endl;
+    for (size_t i=0;i<position;i++) {
+        outfile << _log[i<<2] << " " 
+                << _log[(i<<2)+1] << " " 
+                << _log[(i<<2)+2] << " " 
+                << _log[(i<<2)+3] << std::endl;
     }
     outfile.close();
+    pthread_spin_unlock(&lck);
 
     if (clear) {
         _t.clear();
     }
-
-    pthread_spin_unlock(&lck);
 }
 
 void Timestamp::instance_clear() {

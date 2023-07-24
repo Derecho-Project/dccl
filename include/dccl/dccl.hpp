@@ -260,12 +260,12 @@ private:
     uint64_t* _log;
 
     /**
-     * @brief capacity of the log
+     * @brief capacity (in entry number) of the log
      */
     size_t capacity;
 
     /**
-     * @brief the current position
+     * @brief the current entry position
      */
     size_t position;
 
@@ -316,9 +316,9 @@ public:
     /**
      * @brief log timestamp
      *
-     * @param   tag         Event tag, a.k.a event identifier
-     * @param   rank        My rank
-     * @param   extra       Optional extra information
+     * @param[in]   tag         Event tag, a.k.a event identifier
+     * @param[in]   rank        My rank
+     * @param[in]   extra       Optional extra information
      */
     static inline void log(uint64_t tag, uint64_t rank, uint64_t extra = 0ull) {
         _t.instance_log(tag,rank,extra);
@@ -327,8 +327,8 @@ public:
     /**
      * @brief Flush the timestamps into a file
      *
-     * @param   filename    The nameof the file
-     * @param   clear       Clear the log after flush if `clear == true`.
+     * @param[in]   filename    The nameof the file
+     * @param[in]   clear       Clear the log after flush if `clear == true`.
      */
     static inline void flush(const std::string& filename, bool clear=true) {
         _t.instance_flush(filename,clear);
@@ -341,6 +341,60 @@ public:
         _t.instance_clear();
     }
 };
+
+/**
+ * @cond    DoxygenSuppressed
+ * The DCCL timestamp tag is prefixed by 1000000
+ */
+#define     TT_DCCL(x)                      (1000000 + (x))
+
+// OVERALL
+#define     TT_WARMUP_START                 TT_DCCL(0001)
+#define     TT_WARMUP_END                   TT_DCCL(0002)
+#define     TT_TEST_START                   TT_DCCL(0003)
+#define     TT_TEST_END                     TT_DCCL(0004)
+
+// ALLREDUCE
+#define     TT_ALLREDUCE_ENTER              TT_DCCL(1001)
+#define     TT_ALLREDUCE_MEMCPY             TT_DCCL(1020)
+#define     TT_ALLREDUCE_REDUCESCATTER      TT_DCCL(1030)
+#define     TT_ALLREDUCE_ALLGATHER          TT_DCCL(1040)
+#define     TT_ALLREDUCE_DONE               TT_DCCL(1100)
+/**
+ * @endcond
+ */
+
+/**
+ * @brief Timestamp::log() syntax sugar
+ * Using this macro to avoid `#ifdef ENABLE_EVALUATION` in the code.
+ * @param[in]   tag     Event tag, a.k.a event identifier
+ * @param[in]   rank    My rank
+ * @param[in]   extra   Optional extra information
+ */
+#define TIMESTAMP(tag,rank,extra)           Timestamp::log(tag,rank,extra)
+
+/**
+ * @brief Timestamp::flush() syntax sugar
+ * Using this macro to avoid `#ifdef ENABLE_EVALUATION` in the code.
+ * @param[in]   filename    The nameof the file
+ * @param[in]   clear       Clear the log after flush if `clear == true`.
+ */
+#define FLUSH_AND_CLEAR_TIMESTAMP(filename) Timestamp::flush(filename,true)
+
+/**
+ * @brief Timestamp::clear() syntax sugar
+ * Using this macro to avoid `#ifdef ENABLE_EVALUATION` in the code.
+ */
+#define CLEAR_TIMESTAMP()                   Timestamp::clear()
+
+#else
+
+#define TIMESTAMP(tag,rank,extra)
+#define FLUSH_AND_CLEAR_TIMESTAMP(filename)
+#define CLEAR_TIMESTAMP()
+
+#define TIMESTAMP(tag,rank,extra)
+
 #endif//ENABLE_EVALUATION
 /**
  * @}
