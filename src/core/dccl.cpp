@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <derecho/core/derecho.hpp>
 #include <derecho/utils/logger.hpp>
+#include <derecho/utils/time.h>
 #include <dccl/dccl.hpp>
 #include "internal_common.hpp"
 #include "algorithms.hpp"
