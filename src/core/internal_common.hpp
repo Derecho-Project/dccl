@@ -298,17 +298,18 @@ inline T reverse_bits(const T x, size_t nbits = sizeof(T)*8) {
  */
 template<typename IntegerType>
 inline IntegerType log_two(IntegerType n) {
-    assert(IS_POWER_OF_TWO(n));
-    IntegerType e = 0;
+    IntegerType shift = 1;
+    assert(n>0);
     const IntegerType nbits = sizeof(IntegerType)*8 - (std::is_signed<IntegerType>::value?1:0);
-    while (e < nbits) {
-        if (static_cast<IntegerType>(1<<e) >= n) {
+    while (shift <= nbits) {
+        if (n >> shift) {
+            shift++;
+        } else {
             break;
         }
-        e ++;
     }
-    assert(static_cast<IntegerType>(1<<e) == n);
-    return e;
+    assert((static_cast<IntegerType>(1)<<(shift-1))<=n);
+    return shift-1;
 }
 
 /**

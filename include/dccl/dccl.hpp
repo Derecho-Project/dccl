@@ -388,13 +388,17 @@ public:
 #define CLEAR_TIMESTAMP()                   Timestamp::clear()
 
 #else
-
+/**
+ * @cond DoxygenSuppressed
+ */
 #define TIMESTAMP(tag,rank,extra)
 #define FLUSH_AND_CLEAR_TIMESTAMP(filename)
 #define CLEAR_TIMESTAMP()
 
 #define TIMESTAMP(tag,rank,extra)
-
+/**
+ * @endcond
+ */
 #endif//ENABLE_EVALUATION
 /**
  * @}

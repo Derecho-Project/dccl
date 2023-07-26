@@ -267,6 +267,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                            ncclDataType_t   datatype,
                            ncclRedOp_t      op,
                            ncclComm_t       comm) {
+/*
     uint32_t        my_rank = dcclGetMyRank(comm);
     TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,op);
     ncclResult_t    ret =               ncclSuccess;
@@ -319,7 +320,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     // STEP 4: all gather:
     ret = algorithm::all_gather_recursive_doubling(recvbuff,count,datatype,comm);
     TIMESTAMP(TT_ALLREDUCE_ALLGATHER,my_rank,op);
-
+ */
     return ncclSuccess;
 }
 
@@ -440,6 +441,7 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
                                ncclDataType_t   datatype,
                                ncclRedOp_t      op,
                                ncclComm_t       comm) {
+ /*
     VALIDATE_COMM(comm);
 
     ncclResult_t ret = ncclSuccess;
@@ -455,6 +457,8 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
                                                         scratchpad,
                                                         recvcount*dcclGetWorldSize(comm),
                                                         datatype,op,comm);
+*/
+    return ncclInvalidUsage;
 }
 
 #ifdef ENABLE_EVALUATION
