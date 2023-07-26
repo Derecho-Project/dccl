@@ -267,34 +267,16 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                            ncclDataType_t   datatype,
                            ncclRedOp_t      op,
                            ncclComm_t       comm) {
-/*
-    uint32_t        my_rank = dcclGetMyRank(comm);
-    TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,op);
+    uint32_t        my_rank =           dcclGetMyRank(comm);
     ncclResult_t    ret =               ncclSuccess;
     size_t          total_data_size =   count * size_of_type(datatype);
-
-    VALIDATE_COMM(comm);
-    uint32_t        world_size =        dcclGetWorldSize(comm);
-
+    TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,op);
 
     // STEP 1: test constraints.
-    if (!IS_POWER_OF_TWO(world_size)) {
-        dccl_error("Support for non-power-of-two world size to be added yet.");
-        return ncclInvalidArgument;
-    }
-    if (count % world_size) {
-        dccl_error("Support for uneven data per node to be added yet.");
-        return ncclInvalidArgument;
-    }
     if (CACHELINE_OFFSET(sendbuff) || CACHELINE_OFFSET(recvbuff)) {
         dccl_warn("Either sendbuff@{:p} or recvbuff@{:p} is not cacheline ({} bytes) aligned. "
                   "Possible performance degradation might occur.",
                   sendbuff, recvbuff, CACHELINE_SIZE);
-    }
-    if (CACHELINE_OFFSET(total_data_size/world_size)) {
-        dccl_warn("Each block ({} bytes) for ReduceScatter operation is not cacheline ({} bytes) aligned. "
-                  "Possible performance degradation might occur.",
-                  total_data_size/world_size, CACHELINE_SIZE);
     }
 
     // STEP 2: check buffer
@@ -303,25 +285,23 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     }
     TIMESTAMP(TT_ALLREDUCE_MEMCPY,my_rank,op);
 
-    // STEP 3: reduce scatter
+    // STEP 3: verify_scratchpad
     ret = verify_scratchpad(total_data_size>>1,comm);
     if (ret != ncclSuccess) {
         dccl_error("{} failed to verify scratchpad memory with size {}",
                    __func__, total_data_size>>1);
         return ret;
     }
-    ret = algorithm::reduce_scatter_recursive_halving(recvbuff,scratchpad,count,datatype,op,comm);
+
+    ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,scratchpad,count,datatype,op,comm);
     if (ret != ncclSuccess) {
-        dccl_error("{}: reduce scatter failed.");
+        dccl_error("{}: all_reduce_recursive_halving_and_doubling() failed.",
+                   __func__);
         return ret;
     }
-    TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
+    TIMESTAMP(TT_ALLREDUCE_DONE,my_rank,op);
 
-    // STEP 4: all gather:
-    ret = algorithm::all_gather_recursive_doubling(recvbuff,count,datatype,comm);
-    TIMESTAMP(TT_ALLREDUCE_ALLGATHER,my_rank,op);
- */
-    return ncclSuccess;
+    return ret;
 }
 
 /* deprecated

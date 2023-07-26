@@ -357,8 +357,10 @@ public:
 // ALLREDUCE
 #define     TT_ALLREDUCE_ENTER              TT_DCCL(1001)
 #define     TT_ALLREDUCE_MEMCPY             TT_DCCL(1020)
+#define     TT_ALLREDUCE_RDH_PREPROCESS     TT_DCCL(1021)
 #define     TT_ALLREDUCE_REDUCESCATTER      TT_DCCL(1030)
 #define     TT_ALLREDUCE_ALLGATHER          TT_DCCL(1040)
+#define     TT_ALLREDUCE_RDH_POSTPROCESS    TT_DCCL(1041)
 #define     TT_ALLREDUCE_DONE               TT_DCCL(1100)
 /**
  * @endcond

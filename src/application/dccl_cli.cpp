@@ -8,7 +8,7 @@
 using namespace dccl;
 
 const char* help_string = 
-    "\t--api,-a     name of the DCCL api to be tested. Full api list:\n"
+    "\t--api,-a     name of the DCCL api to be tested. This option is mandatory. Full api list:\n"
     "\t             scatter,gather,broadcast,send,recv,reduce,all_reduce,reduce_scatter,all_gather\n"
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
     "\t--repeat,-r  number of operations for evaluation, defaulted to 1000.\n"
@@ -144,6 +144,11 @@ int main(int argc, char** argv) {
         default:
             break;
         }
+    }
+
+    if (api.empty()) {
+        print_help(argv[0]);
+        return -1;
     }
 
     std::cout << "dccl api evaluation with the following configuration:" << std::endl;

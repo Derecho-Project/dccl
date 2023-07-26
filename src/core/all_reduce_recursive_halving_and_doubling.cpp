@@ -19,10 +19,6 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
     auto            shard_members  = get_dccl_shard_members(comm);
 
     // STEP 1 check contraints
-    if (count % world_size) {
-        dccl_error("Support for uneven data per node to be added yet.");
-        return ncclInvalidArgument;
-    }
     if (CACHELINE_OFFSET(buffer)) {
         dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
                   "Possible performance degradation might occur.",
@@ -44,6 +40,10 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
     //      new_rank = old_rank - r
     //      perform as independent
     uint32_t subworld_size  = (1<<log_two(world_size));
+    if (count % subworld_size) {
+        dccl_error("Support for uneven data per node to be added yet.");
+        return ncclInvalidArgument;
+    }
     uint32_t r              = world_size - subworld_size;
     const rank_converter_t to_new_rank  = [r] (uint32_t _or) {
         return (_or < 2*r)? ( _or / 2) : (_or - r);

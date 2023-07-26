@@ -26,7 +26,7 @@ ncclResult_t all_gather_recursive_doubling (
                   " See {}:{}.",
                   __func__,buffer,__FILE__,__LINE__);
     }
-    assert(subworld_size<dcclGetWorldSize(comm));
+    assert(subworld_size<=dcclGetWorldSize(comm));
     assert(IS_POWER_OF_TWO(subworld_size));
     const uint32_t  exponent = log_two(subworld_size);
     assert(count%subworld_size == 0);
