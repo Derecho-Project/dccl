@@ -37,6 +37,12 @@ std::shared_ptr<spdlog::logger>& getDcclLogger();
  */
 
 /**
+ * @brief   The timeout for oob transfer.
+ * Default to 5 seconds, it should be enough for transfer 50GB data using 100Gb Link.
+ */
+#define DCCL_OOB_TIMEOUT_US     5000000
+
+/**
  * @brief The DCCL Subgroup Class type
  * It defines the Derecho Subgroup type that supports the DCCL APIs.
  */

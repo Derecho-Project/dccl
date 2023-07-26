@@ -74,8 +74,8 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         riov.iov_base   = scratchpad;
         riov.iov_len    = (total_data_size>>1);
         SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,30000);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,30000);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
         // do reduce for the top half
         ON_DCCL_DATATYPE(datatype,
                          ret=do_reduce,
@@ -90,7 +90,7 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         riov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (total_data_size>>1));
         riov.iov_len    = (total_data_size>>1);
         SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,30000);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
     } else if (my_role == Follower) {
         uint32_t    peer_rank   = my_rank - 1;
         auto        peer_id     = shard_members.at(peer_rank);
@@ -103,8 +103,8 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         riov.iov_base   = scratchpad;
         riov.iov_len    = (total_data_size>>1);
         SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,30000);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,30000);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
         // do reduce for the bottom half
         ON_DCCL_DATATYPE(datatype,
                          ret=do_reduce,
@@ -119,7 +119,7 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         siov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (total_data_size>>1));
         siov.iov_len    = (total_data_size>>1);
         SUBGROUP_HANDLE(comm).oob_send(peer_id,&siov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,30000);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
     }
 
     TIMESTAMP(TT_ALLREDUCE_RDH_PREPROCESS,my_rank,op);
@@ -160,7 +160,7 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         siov.iov_base   = buffer;
         siov.iov_len    = total_data_size;
         SUBGROUP_HANDLE(comm).oob_send(peer_id,&siov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,30000);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
     } else if (my_role == Follower) {
         // receive total data from Leader
         uint32_t    peer_rank   = my_rank - 1;
@@ -170,7 +170,7 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         riov.iov_base   = buffer;
         riov.iov_len    = total_data_size;
         SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,30000);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
     }
 
     TIMESTAMP(TT_ALLREDUCE_RDH_POSTPROCESS,my_rank,op);
