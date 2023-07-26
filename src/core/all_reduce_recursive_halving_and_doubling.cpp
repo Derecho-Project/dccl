@@ -122,6 +122,8 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,30000);
     }
 
+    TIMESTAMP(TT_ALLREDUCE_RDH_PREPROCESS,my_rank,op);
+
     // STEP 3 reduce scatter and all gather on subworld.
     if (my_role == Leader || my_role == Independent) {
         ret = reduce_scatter_recursive_halving(buffer,scratchpad,count,datatype,op,comm,
@@ -132,6 +134,8 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
             return ret;
         }
 
+        TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
+
         ret = all_gather_recursive_doubling(buffer,count,datatype,comm,
                                             subworld_size,to_new_rank,to_old_rank);
 
@@ -140,6 +144,10 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
                        __func__, ret);
             return ret;
         }
+        TIMESTAMP(TT_ALLREDUCE_ALLGATHER,my_rank,op);
+    } else {
+        TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
+        TIMESTAMP(TT_ALLREDUCE_ALLGATHER,my_rank,op);
     }
 
     // STEP 4 postprocessing.
@@ -164,6 +172,8 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,30000);
     }
+
+    TIMESTAMP(TT_ALLREDUCE_RDH_POSTPROCESS,my_rank,op);
 
     return ret;
 }
