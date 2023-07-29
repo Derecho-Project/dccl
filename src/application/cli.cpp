@@ -278,7 +278,9 @@ int main(int argc, char** argv) {
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
         if (api == "all_reduce") { \
+            TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,0); \
             ompi_err = MPI_Allreduce(MPI_IN_PLACE,sendbuf,data_count,data_type,operation,MPI_COMM_WORLD); \
+            TIMESTAMP(TT_ALLREDUCE_DONE,my_rank,0); \
         } else { \
             ompi_err = ~MPI_SUCCESS; \
         } \
@@ -349,7 +351,8 @@ int main(int argc, char** argv) {
     // step 5 -flush timestmap
     std::cout << "flush timestamp..." << std::endl;
 #ifdef __BUILD_FOR_OMPI__
-    FLUSH_AND_CLEAR_TIMESTAMP("ompi_cli.tt");
+    std::string timestamp_fn = "ompi_cli." + std::to_string(my_rank) + ".tt";
+    FLUSH_AND_CLEAR_TIMESTAMP(timestamp_fn);
 #else
     FLUSH_AND_CLEAR_TIMESTAMP("dccl_cli.tt");
 #endif
