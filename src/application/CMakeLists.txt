@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.12.4)
 set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
-add_executable(dccl_cli dccl_cli.cpp)
+add_executable(dccl_cli cli.cpp)
 target_include_directories(dccl_cli PRIVATE
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
@@ -33,3 +33,14 @@ add_custom_command(TARGET dccl_cli POST_BUILD
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/cfg/layout.json
     COMMENT "prepare demo configuration"
 )
+
+if(MPI_CXX_FOUND AND MPI_CXX_VERSION VERSION_GREATER_EQUAL 3.1)
+    add_executable(ompi_cli cli.cpp)
+    target_include_directories(ompi_cli PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${MPI_INCLUDE_PATH}>)
+    target_compile_definitions(ompi_cli PRIVATE __BUILD_FOR_OMPI__)
+    target_link_libraries(ompi_cli ${MPI_LIBRARIES} dccl)
+endif()

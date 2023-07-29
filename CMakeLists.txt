@@ -56,6 +56,9 @@ find_package(OpenSSL REQUIRED)
 # derecho
 find_package(derecho CONFIG REQUIRED)
 
+# openmpi
+find_package(MPI REQUIRED)
+
 # doxygen
 find_package(Doxygen)
 

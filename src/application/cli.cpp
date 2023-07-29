@@ -5,6 +5,11 @@
 #include <getopt.h>
 #include <derecho/utils/time.h>
 
+#ifdef __BUILD_FOR_OMPI__
+#include <mpi.h>
+#include <stdlib.h>
+#endif//__BUILD_FOR_OMPI__
+
 using namespace dccl;
 
 const char* help_string = 
@@ -19,7 +24,55 @@ const char* help_string =
     "\t--count,-c   number of data entries in the array, defaulted to 1024\n"
     "\t--help,-h    print this message.\n";
 
-static ncclDataType_t parse_data_type(const char* dt_str) {
+#ifdef __BUILD_FOR_OMPI__
+
+inline MPI_Datatype parse_data_type(const char* dt_str) {
+    if (std::strcmp("int8",dt_str)==0) {
+        return MPI_INT8_T;
+    } else if (std::strcmp("uint8",dt_str)==0) {
+        return MPI_UINT8_T;
+    } else if (std::strcmp("int32",dt_str)==0) {
+        return MPI_INT32_T;
+    } else if (std::strcmp("uint32",dt_str)==0) {
+        return MPI_UINT32_T;
+    } else if (std::strcmp("int64",dt_str)==0) {
+        return MPI_INT64_T;
+    } else if (std::strcmp("uint64",dt_str)==0) {
+        return MPI_UINT64_T;
+    } else if (std::strcmp("float16",dt_str)==0) {
+        std::cerr << "OpenMPI does not support float16, raising an exception..." << std::endl;
+        throw std::runtime_error("OpenMPI does not support float16.");
+    } else if (std::strcmp("float32",dt_str)==0) {
+        return MPI_FLOAT;
+    } else if (std::strcmp("float64",dt_str)==0) {
+        return MPI_DOUBLE;
+    }
+    // default
+    std::cerr << "Unknown data type:" << dt_str << " falling back to 'UINT8_T'" << std::endl;
+    return MPI_UINT8_T;
+}
+
+/* Use MPI_Type_size() */
+
+inline MPI_Op parse_reduce_operation(const char* ro_str) {
+    if (std::strcmp("sum",ro_str)==0) {
+        return MPI_SUM;
+    } else if (std::strcmp("prod",ro_str)) {
+        return MPI_PROD;
+    } else if (std::strcmp("max",ro_str)) {
+        return MPI_MAX;
+    } else if (std::strcmp("min",ro_str)) {
+        return MPI_MIN;
+    } else if (std::strcmp("avg",ro_str)) {
+        throw std::runtime_error("Open MPI does not support average Operation.");
+    }
+    // default
+    std::cerr << "Unknown operation:" << ro_str << " falling back to 'sum'" << std::endl;
+    return MPI_SUM;
+}
+
+#else
+inline ncclDataType_t parse_data_type(const char* dt_str) {
     if (std::strcmp("int8",dt_str)==0) {
         return ncclDataType_t::ncclInt8;
     } else if (std::strcmp("uint8",dt_str)==0) {
@@ -67,7 +120,7 @@ inline size_t size_of_type(ncclDataType_t datatype) {
     }
 }
 
-static ncclRedOp_t parse_reduce_operation(const char* ro_str) {
+inline ncclRedOp_t parse_reduce_operation(const char* ro_str) {
     if (std::strcmp("sum",ro_str)==0) {
         return ncclSum;
     } else if (std::strcmp("prod",ro_str)) {
@@ -83,6 +136,7 @@ static ncclRedOp_t parse_reduce_operation(const char* ro_str) {
     std::cerr << "Unknown operation:" << ro_str << " falling back to 'sum'" << std::endl;
     return ncclSum;
 }
+#endif//__BUILD_FOR_OMPI__
 
 static void print_help(const char* command_name) {
     std::cout << "Usage: " << command_name << " [options]" << std::endl;
@@ -107,8 +161,13 @@ int main(int argc, char** argv) {
     std::string api;
     size_t warmup_count = 0;
     size_t repeat_count = 1000;
-    ncclDataType_t data_type = ncclUint32;
-    ncclRedOp_t operation = ncclSum;
+#ifdef __BUILD_FOR_OMPI__
+    MPI_Datatype    data_type = MPI_UINT32_T;
+    MPI_Op          operation = MPI_SUM;
+#else
+    ncclDataType_t  data_type = ncclUint32;
+    ncclRedOp_t     operation = ncclSum;
+#endif
     size_t data_count = 1024;
 
     while (true) {
@@ -150,41 +209,86 @@ int main(int argc, char** argv) {
         print_help(argv[0]);
         return -1;
     }
-
+#ifdef __BUILD_FOR_OMPI__
+    std::cout << "ompi api evaluation with the following configuration:" << std::endl;
+#else
     std::cout << "dccl api evaluation with the following configuration:" << std::endl;
+#endif
     std::cout << "\tapi:" << api << std::endl;
     std::cout << "\twarmup:" << warmup_count << std::endl;
     std::cout << "\trepeat:" << repeat_count << std::endl;
     std::cout << "\ttype:" << data_type << std::endl;
     std::cout << "\top:" << operation << std::endl;
     std::cout << "\tcount:" << data_count << std::endl;
-    ncclComm_t comm;
     ncclResult_t ret;
+#ifdef __BUILD_FOR_OMPI__
+    int32_t my_rank;
+    int ompi_err;
+#else
     uint32_t my_rank;
+    ncclComm_t comm;
+#endif//__BUILD_FOR_OMPI__
 
     // step 1 - initialize comm
+#ifdef __BUILD_FOR_OMPI__
+    ompi_err = MPI_Init(NULL,NULL);
+    if (ompi_err != MPI_SUCCESS) {
+        std::cerr << "failed to initialize mpi communicator." << std::endl;
+        return ompi_err;
+    }
+    ompi_err = MPI_Comm_rank ( MPI_COMM_WORLD, &my_rank);
+    if (ompi_err != MPI_SUCCESS) {
+        std::cerr << "failed to get rank from mpi communicator." << std::endl;
+        return ompi_err;
+    }
+#else
     ret = ncclCommInit(&comm);
     if (ret != ncclSuccess) {
-        std::cerr << "failed to initialize dccl communication." << std::endl;
+        std::cerr << "failed to initialize dccl communicator." << std::endl;
         return ret;
     }
     my_rank = dcclGetMyRank(comm);
+#endif//__BUILD_FOR_OMPI__
 
     // step 2 - allocating data
     void* sendbuf = nullptr;
     void* recvbuf = nullptr;
-    if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*size_of_type(data_type)) ||
-        posix_memalign(&recvbuf,CACHELINE_SIZE,data_count*size_of_type(data_type))) {
-        std::cerr << "Failed to allocate " << data_count*size_of_type(data_type) << " bytes" << std::endl;
+#ifdef __BUILD_FOR_OMPI__
+    int data_size;
+    MPI_Type_size(data_type,&data_size);
+#else
+    size_t data_size = size_of_type(data_type);
+#endif
+    if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*data_size) ||
+        posix_memalign(&recvbuf,CACHELINE_SIZE,data_count*data_size)) {
+        std::cerr << "Failed to allocate " << data_count*data_size << " bytes" << std::endl;
         std::cerr << "Error:" << std::strerror(errno) << std::endl;
+#ifdef __BUILD_FOR_OMPI__
+        MPI_Finalize();
+#else
         ncclCommFinalize(comm);
+#endif//__BUILD_FOR_OMPI__
         return 1;
     }
     // initialize each byte of sendbuf to 1
-    memset(sendbuf,1,data_count*size_of_type(data_type));
+    memset(sendbuf,1,data_count*data_size);
     // zero recvbuf
-    bzero(recvbuf,data_count*size_of_type(data_type));
-
+    bzero(recvbuf,data_count*data_size);
+#ifdef __BUILD_FOR_OMPI__
+#define RUN_WITH_COUNTER(cnt) \
+    while (cnt--) { \
+        if (api == "all_reduce") { \
+            ompi_err = MPI_Allreduce(MPI_IN_PLACE,sendbuf,data_count,data_type,operation,MPI_COMM_WORLD); \
+        } else { \
+            ompi_err = ~MPI_SUCCESS; \
+        } \
+        if (ompi_err != MPI_SUCCESS) { \
+            std::cerr << "API:" << api << " failed with error:" << ompi_err << std::endl; \
+            MPI_Finalize(); \
+            return 2; \
+        } \
+    }
+#else
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
         if (api == "all_reduce") { \
@@ -211,6 +315,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+#endif//__BUILD_FOR_OMPI__
+
     // step 3 - warmup
     std::cout << "warm up..." << std::endl;
     TIMESTAMP(TT_WARMUP_START,my_rank,0);
@@ -226,7 +332,7 @@ int main(int argc, char** argv) {
     RUN_WITH_COUNTER(cnt);
     TIMESTAMP(TT_TEST_END,my_rank,0);
     std::cout << "done." << std::endl;
-
+#ifndef __BUILD_FOR_OMPI__
     // deregister memory data
     if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
         std::cerr << "Failed to deregister sendbuf@" << sendbuf << "from dccl." << std::endl;
@@ -234,6 +340,7 @@ int main(int argc, char** argv) {
     if (dcclDeregisterCacheMemory(comm,recvbuf) != ncclSuccess) {
         std::cerr << "Failed to deregister recvbuf@" << recvbuf << "from dccl." << std::endl;
     }
+#endif//__BUILD_FOR_OMPI__
 
     // free data
     free(sendbuf);
@@ -241,14 +348,25 @@ int main(int argc, char** argv) {
 
     // step 5 -flush timestmap
     std::cout << "flush timestamp..." << std::endl;
+#ifdef __BUILD_FOR_OMPI__
+    FLUSH_AND_CLEAR_TIMESTAMP("ompi_cli.tt");
+#else
     FLUSH_AND_CLEAR_TIMESTAMP("dccl_cli.tt");
+#endif
     std::cout << "...done" << std::endl;
 
     // step 6 - finalize comm
+#ifdef __BUILD_FOR_OMPI__
+    ompi_err = MPI_Finalize();
+    if (ompi_err != MPI_SUCCESS) {
+        std::cerr << "failed to finalize the ompi communicator." << std::endl;
+    }
+#else
     ret = ncclCommFinalize(comm);
     if (ret != ncclSuccess) {
-        std::cerr << "failed to finalize the dccl communication." << std::endl;
+        std::cerr << "failed to finalize the dccl communicator." << std::endl;
     }
+#endif
 
     return 0;
 }
