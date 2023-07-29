@@ -40,7 +40,7 @@ if(MPI_CXX_FOUND AND MPI_CXX_VERSION VERSION_GREATER_EQUAL 3.1)
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${MPI_INCLUDE_PATH}>)
+        $<BUILD_INTERFACE:${MPI_CXX_INCLUDE_DIRS}>)
     target_compile_definitions(ompi_cli PRIVATE __BUILD_FOR_OMPI__)
-    target_link_libraries(ompi_cli ${MPI_LIBRARIES} dccl)
+    target_link_libraries(ompi_cli PUBLIC MPI::MPI_CXX dccl)
 endif()
