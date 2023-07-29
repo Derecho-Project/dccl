@@ -5,6 +5,15 @@ export INSTALL_PREFIX=$PREFIX/opt
 # target=Debug
 target=Release
 
+# 0 - install openmpi
+wget -c https://download.open-mpi.org/release/open-mpi/v4.1/openmpi-4.1.5.tar.bz2
+tar -xf openmpi-4.1.5.tar.bz2
+cd openmpi-4.1.5
+./configure --prefix=${INSTALL_PREFIX}
+make -j `nproc`
+make install
+cd ..
+
 # 1 - install derecho
 git clone https://github.com/derecho-project/derecho.git
 cd derecho
@@ -29,7 +38,7 @@ cd ../..
 # 2 - install dccl
 git clone git@github.com:derecho-project/dccl.git
 cd dccl
-git checkout algor
+git checkout ompi
 mkdir build-${target}
 cd build-${target}
 cmake -DCMAKE_BUILD_TYPE=${target} -DCMAKE_INSTALL_PREFIX=$HOME/.dccl/opt ..

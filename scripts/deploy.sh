@@ -14,4 +14,5 @@ do
     ssh ${node} "rm -rf ${BENCHMARK_WORKSPACE};mkdir ${BENCHMARK_WORKSPACE}"
     scp deploy_${TARGET}.sh ${node}:${BENCHMARK_WORKSPACE}/
     ssh ${node} "chmod +x ${BENCHMARK_WORKSPACE}/deploy_${TARGET}.sh"
+    scp ompi.tune ${node}:${BENCHMARK_WORKSPACE}/
 done
