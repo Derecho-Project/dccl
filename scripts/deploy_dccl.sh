@@ -2,8 +2,8 @@
 export PREFIX=$HOME/.dccl
 export INSTALL_PREFIX=$PREFIX/opt
 
-target=Debug
-# target=Release
+# target=Debug
+target=Release
 
 # 1 - install derecho
 git clone https://github.com/derecho-project/derecho.git
