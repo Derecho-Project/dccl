@@ -279,7 +279,7 @@ int main(int argc, char** argv) {
     while (cnt--) { \
         if (api == "all_reduce") { \
             TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,0); \
-            ompi_err = MPI_Allreduce(sendbuf,recvbuf,data_count,data_type,operation,MPI_COMM_WORLD); \
+            ompi_err = MPI_Allreduce(MPI_IN_PLACE,sendbuf,data_count,data_type,operation,MPI_COMM_WORLD); \
             TIMESTAMP(TT_ALLREDUCE_DONE,my_rank,0); \
         } else { \
             ompi_err = ~MPI_SUCCESS; \
