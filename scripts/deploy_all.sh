@@ -46,7 +46,7 @@ cd ../..
 # 4 - install dccl
 git clone git@github.com:derecho-project/dccl.git
 cd dccl
-git checkout algor
+git checkout ompi
 mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.dccl/opt ..

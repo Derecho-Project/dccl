@@ -1,2 +1,1 @@
---mca pml_ucx_devices mlx5_0
---mca btl_tcp_if_include ib0
+--mca pml ucx
