@@ -170,9 +170,7 @@ ncclResult_t all_reduce_recursive_binary_blocks(
 
 /**
  * @brief AllReduce with ring algorithm
- * This implementation is based on Figure 3.7 in Rabenseifner's paper called
- * [_Optimization of Collective Reduction Operations_]
- * (https://link.springer.com/chapter/10.1007/978-3-540-24685-5_1).
+ * This is a re-implementation of the OpenMPI's ring allreduce algorithm.
  *
  * @param[in,out]   buffer      The `buffer` contains local data to be reduced, it also receives the reduced value
  *                              after the operation. Its size must be equal or greater than 
