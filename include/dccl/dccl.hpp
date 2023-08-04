@@ -19,6 +19,10 @@
  * We put all DCCL API to the `dccl` namespace. 
  */
 
+#define DCCL_ALLREDUCE_ALGORITHM_CONFSTR    "DCCL/allreduce_algorithm"
+#define DCCL_ALLREDUCE_RING                 "ring"
+#define DCCL_ALLREDUCE_RABINSEIFNER         "rabinseifner"
+
 /**
  * @brief DCCL namespace contains all API declaration and definition.
  *

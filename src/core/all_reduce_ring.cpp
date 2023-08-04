@@ -73,7 +73,7 @@ ncclResult_t all_reduce_ring(
     dccl_trace("{}: ring reduce_scatter done.", __func__);
 
     // STEP 3 ring all gather
-    for (uint32_t s=0;s<world_size-1;) {
+    for (uint32_t s=0;s<world_size-1;s++) {
         // 3.1 send dat[r-s+1] to rank r+1
         struct iovec siov,riov;
         siov.iov_base   = __DATA__(my_rank - s + 1);

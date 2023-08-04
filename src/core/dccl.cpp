@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <derecho/core/derecho.hpp>
 #include <derecho/utils/logger.hpp>
+#include <derecho/conf/conf.hpp>
 #include <derecho/utils/time.h>
 #include <dccl/dccl.hpp>
 #include "internal_common.hpp"
@@ -285,20 +286,42 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     }
     TIMESTAMP(TT_ALLREDUCE_MEMCPY,my_rank,op);
 
-    // STEP 3: verify_scratchpad
-    ret = verify_scratchpad(total_data_size>>1,comm);
-    if (ret != ncclSuccess) {
-        dccl_error("{} failed to verify scratchpad memory with size {}",
-                   __func__, total_data_size>>1);
-        return ret;
+    if (hasCustomizedConfKey(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == false ||
+        getConfString(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == DCCL_ALLREDUCE_RING) {
+
+        // STEP 3: verify_scratchpad
+        ret = verify_scratchpad(total_data_size/dcclGetWorldSize(comm),comm);
+        if (ret != ncclSuccess) {
+            dccl_error("{} failed to verify scratchpad memory with size {}",
+                       __func__, total_data_size/dcclGetWorldSize(comm));
+            return ret;
+        }
+    
+        ret = algorithm::all_reduce_ring(recvbuff,scratchpad,count,datatype,op,comm);
+        if (ret != ncclSuccess) {
+            dccl_error("{}: all_reduce_ring() failed.",
+                       __func__);
+            return ret;
+        }
+
+    } else if (getConfString(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == DCCL_ALLREDUCE_RABINSEIFNER) {
+    
+        // STEP 3: verify_scratchpad
+        ret = verify_scratchpad(total_data_size>>1,comm);
+        if (ret != ncclSuccess) {
+            dccl_error("{} failed to verify scratchpad memory with size {}",
+                       __func__, total_data_size>>1);
+            return ret;
+        }
+    
+        ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,scratchpad,count,datatype,op,comm);
+        if (ret != ncclSuccess) {
+            dccl_error("{}: all_reduce_recursive_halving_and_doubling() failed.",
+                       __func__);
+            return ret;
+        }
     }
 
-    ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,scratchpad,count,datatype,op,comm);
-    if (ret != ncclSuccess) {
-        dccl_error("{}: all_reduce_recursive_halving_and_doubling() failed.",
-                   __func__);
-        return ret;
-    }
     TIMESTAMP(TT_ALLREDUCE_DONE,my_rank,op);
 
     return ret;
