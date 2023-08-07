@@ -70,6 +70,7 @@ ncclResult_t all_reduce_ring(
         }
     }
 
+    TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
     dccl_trace("{}: ring reduce_scatter done.", __func__);
 
     // STEP 3 ring all gather
@@ -87,6 +88,7 @@ ncclResult_t all_reduce_ring(
         SUBGROUP_HANDLE(comm).wait_for_oob_op(from_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
     }
 
+    TIMESTAMP(TT_ALLREDUCE_ALLGATHER,my_rank,op);
     dccl_trace("{}: ring allgather done.", __func__);
 
     return ret;
