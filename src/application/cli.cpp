@@ -220,11 +220,11 @@ int main(int argc, char** argv) {
     std::cout << "\ttype:" << data_type << std::endl;
     std::cout << "\top:" << operation << std::endl;
     std::cout << "\tcount:" << data_count << std::endl;
-    ncclResult_t ret;
 #ifdef __BUILD_FOR_OMPI__
     int32_t my_rank;
     int ompi_err;
 #else
+    ncclResult_t ret;
     uint32_t my_rank;
     ncclComm_t comm;
 #endif//__BUILD_FOR_OMPI__
