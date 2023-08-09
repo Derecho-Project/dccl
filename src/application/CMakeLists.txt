@@ -44,3 +44,12 @@ if(MPI_CXX_FOUND AND MPI_CXX_VERSION VERSION_GREATER_EQUAL 3.1)
     target_compile_definitions(ompi_cli PRIVATE __BUILD_FOR_OMPI__)
     target_link_libraries(ompi_cli PUBLIC MPI::MPI_CXX dccl)
 endif()
+
+add_executable(p2p_perf p2p_perf.cpp)
+target_include_directories(p2p_perf PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+)
+target_link_libraries(p2p_perf dccl derecho)
+add_dependencies(p2p_perf dccl)
