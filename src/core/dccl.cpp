@@ -471,7 +471,7 @@ Timestamp::Timestamp(size_t num_entries):
     pthread_spin_init(&lck,PTHREAD_PROCESS_PRIVATE);
     pthread_spin_lock(&lck);
 
-    capacity = ((num_entries == 0) ? (1ul<<16) : num_entries);
+    capacity = ((num_entries == 0) ? (1ul<<24) : num_entries);
     size_t capacity_in_bytes = (capacity)*4*sizeof(uint64_t);
 
     if ( posix_memalign(reinterpret_cast<void**>(&_log), CACHELINE_SIZE,capacity_in_bytes) ) {
@@ -493,11 +493,19 @@ void Timestamp::instance_log(uint64_t tag, uint64_t rank, uint64_t extra) {
     uint64_t ts = get_time();
     pthread_spin_lock(&lck);
 
-    _log[(position<<2)] = tag;
-    _log[(position<<2)+1] = rank;
-    _log[(position<<2)+2] = extra;
-    _log[(position<<2)+3] = ts;
-    position ++;
+    if (position < capacity) {
+        _log[(position<<2)] = tag;
+        _log[(position<<2)+1] = rank;
+        _log[(position<<2)+2] = extra;
+        _log[(position<<2)+3] = ts;
+        position ++;
+    } else {
+        dccl_error("{}, timestamp log is full. drop data:\n"
+                   "\t tag = {}\n"
+                   "\t rank = {}\n"
+                   "\t extra = {}\n",
+                   __func__,tag,rank,extra);
+    }
 
     pthread_spin_unlock(&lck);
 }

@@ -280,7 +280,7 @@ private:
 
     /**
      * @brief   Constructor
-     * @param   num_entries     The number of entries in the timestamp, defaulted to 2^16
+     * @param   num_entries     The number of entries in the timestamp, defaulted to 2^24
      */
     Timestamp(size_t num_entries = 0);
 

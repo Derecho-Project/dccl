@@ -106,16 +106,14 @@ static int oob_perf(size_t      size_byte,
     till    = get_time() + (sec)*1000000000ll; \
     do { \
         cur = get_time(); \
-        while (cur < till) { \
-            if (pending < depth) { \
-                TIMESTAMP(TT_OOB_SEND,my_rank,count); \
-                __OOB_SEND; \
-            } \
+        while (cur < till && pending < depth) { \
+            TIMESTAMP(TT_OOB_SEND,my_rank,count); \
+            __OOB_SEND; \
             cur = get_time(); \
         } \
         while (pending > 0) { \
             try { \
-                OOB_WAIT_SEND(peer_id,1); \
+                OOB_WAIT_SEND(peer_id,0); \
                 TIMESTAMP(TT_OOB_ACKD,my_rank,acked++); \
                 pending --; \
             } catch (derecho::derecho_exception& ex) { \
