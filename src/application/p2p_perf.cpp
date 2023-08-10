@@ -33,6 +33,11 @@ static int oob_perf(size_t      size_byte,
             [](persistent::PersistentRegistry*,subgroup_id_t){return std::make_unique<P2PPerfSubgroupType>();});
     uint32_t    my_rank = g.get_my_rank();
     node_id_t   my_id   = g.get_my_id();
+
+    std::cout << "Joined group with my_rank:" << my_rank
+              << ", my_id:" << my_id
+              << std::endl;
+
     // STEP 2: prepare memory pool
     size_t pool_size    = (size_byte*depth + 4095)/4096*4096;
     void*  pool_ptr;
@@ -42,6 +47,7 @@ static int oob_perf(size_t      size_byte,
     }
     bzero(pool_ptr,pool_size);
     g.register_oob_memory(pool_ptr,pool_size);
+    std::cout << pool_size << " bytes are registered as OOB cache." << std::endl;
 
     // STEP 3.0: get peer id.
     auto members = g.get_members();
@@ -52,6 +58,7 @@ static int oob_perf(size_t      size_byte,
             break;
         }
     }
+    std::cout << "Peer id is " << peer_id << std::endl;
 
 /**
  * b - base
@@ -69,10 +76,10 @@ static int oob_perf(size_t      size_byte,
 
 #define PERF_OOB_TIMEOUT_US (5000000)
 
-#define OOB_WAIT_SEND(id) \
-    g.get_subgroup<P2PPerfSubgroupType>().wait_for_oob_op(id,OOB_OP_SEND,PERF_OOB_TIMEOUT_US)
-#define OOB_WAIT_RECV(id) \
-    g.get_subgroup<P2PPerfSubgroupType>().wait_for_oob_op(id,OOB_OP_RECV,PERF_OOB_TIMEOUT_US)
+#define OOB_WAIT_SEND(id,to_us) \
+    g.get_subgroup<P2PPerfSubgroupType>().wait_for_oob_op(id,OOB_OP_SEND,to_us)
+#define OOB_WAIT_RECV(id,to_us) \
+    g.get_subgroup<P2PPerfSubgroupType>().wait_for_oob_op(id,OOB_OP_RECV,to_us)
 
 #define __OOB_SEND \
     { \
@@ -85,50 +92,53 @@ static int oob_perf(size_t      size_byte,
     }
 
 #define RUN_WITH_DURATION(sec) \
-    cur     = get_time(); \
-    till    = cur + (sec)*1000000000; \
-    while(cur < till) { \
-        if (pending < depth) { \
-            __OOB_SEND; \
-        } \
+    till    = get_time() + (sec)*1000000000; \
+    do { \
         cur = get_time(); \
-    }
+        while (cur < till) { \
+            if (pending < depth) { \
+                __OOB_SEND; \
+            } \
+            cur = get_time(); \
+        } \
+        while (pending > 0) { \
+            try { \
+                OOB_WAIT_SEND(peer_id,1); \
+                pending --; \
+            } catch (derecho::derecho_exception& ex) { \
+                break; \
+            } \
+        } \
+    } while( (cur < till) || (pending > 0) );
 
     if (my_rank == 0) { // sender
+        std::cout << "Start as a sender..." << std::endl;
         uint64_t cur;
         uint64_t till;
         size_t count = 0;
-        std::atomic<size_t> pending(0);
-        std::atomic<bool>   stop_listener(false);
+        size_t pending = 0;
 
-        // start a listening thread
-        std::thread listener(
-            [&pending,&pool_ptr,&size_byte,&g,&peer_id,&stop_listener]
-            (){
-                while (pending > 0 || !stop_listener) {
-                    if (pending > 0) {
-                        OOB_WAIT_SEND(peer_id);
-                        pending --;
-                    }
-                }
-            });
         // STEP 3.1: warmup
+        std::cout << "Warming up" << std::endl;
         RUN_WITH_DURATION(warmup_sec);
 
         // STEP 3.2: run
+        std::cout << "Running test" << std::endl;
         RUN_WITH_DURATION(duration_sec);
 
         // STEP 3.3: done
+        std::cout << "Test done." << std::endl;
         memset(pool_ptr,0xff,pool_size);
-        for(size_t i=0;i<depth;) {
-            if(pending<depth) {
-                __OOB_SEND;
-                i ++;
-            }
+        while(pending<depth) {
+            __OOB_SEND;
         }
-        stop_listener = true;
-        listener.join();
+        while(pending > 0) {
+            OOB_WAIT_SEND(peer_id,PERF_OOB_TIMEOUT_US);
+            pending --;
+        }
+        std::cout << "Sender finished." << std::endl;
     } else { // receiver
+        std::cout << "Start as a receiver..." << std::endl;
         size_t nrecv = 0;
         size_t npost = 0;
         struct iovec riov;
@@ -140,15 +150,16 @@ static int oob_perf(size_t      size_byte,
             npost ++;
         }
         while(npost > nrecv) {
-            OOB_WAIT_RECV(peer_id);
-            nrecv ++;
+            OOB_WAIT_RECV(peer_id,PERF_OOB_TIMEOUT_US);
             if (*static_cast<uint8_t*>(__BUF_PTR__(pool_ptr,size_byte,depth,nrecv)) != 0xFF) {
                 riov.iov_base = __BUF_PTR__(pool_ptr,size_byte,depth,npost);
                 OOB_RECV(peer_id,&riov,1);
                 npost ++;
             }
+            nrecv ++;
         }
         // done.
+        std::cout << "Receiver finished." << std::endl;
     }
 
     // STEP 4: finish.
