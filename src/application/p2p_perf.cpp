@@ -7,6 +7,16 @@
 using namespace derecho;
 using namespace dccl;
 
+#define TT_OOB(x)               (2000000 + (x))
+
+#define TT_OOB_WARMUP_START     TT_OOB(0001)
+#define TT_OOB_WARMUP_END       TT_OOB(0002)
+#define TT_OOB_TEST_START       TT_OOB(0003)
+#define TT_OOB_TEST_END         TT_OOB(0004)
+
+#define TT_OOB_SEND             TT_OOB(1001)
+#define TT_OOB_ACKD             TT_OOB(1002)
+
 class P2PPerfSubgroupType : public mutils::ByteRepresentable,
                             public GroupReference {
 private:
@@ -92,11 +102,13 @@ static int oob_perf(size_t      size_byte,
     }
 
 #define RUN_WITH_DURATION(sec) \
-    till    = get_time() + (sec)*1000000000; \
+    std::cout << "duration=" << sec << std::endl; \
+    till    = get_time() + (sec)*1000000000ll; \
     do { \
         cur = get_time(); \
         while (cur < till) { \
             if (pending < depth) { \
+                TIMESTAMP(TT_OOB_SEND,my_rank,count); \
                 __OOB_SEND; \
             } \
             cur = get_time(); \
@@ -104,6 +116,7 @@ static int oob_perf(size_t      size_byte,
         while (pending > 0) { \
             try { \
                 OOB_WAIT_SEND(peer_id,1); \
+                TIMESTAMP(TT_OOB_ACKD,my_rank,acked++); \
                 pending --; \
             } catch (derecho::derecho_exception& ex) { \
                 break; \
@@ -116,15 +129,20 @@ static int oob_perf(size_t      size_byte,
         uint64_t cur;
         uint64_t till;
         size_t count = 0;
+        size_t acked = 0;
         size_t pending = 0;
 
         // STEP 3.1: warmup
         std::cout << "Warming up" << std::endl;
+        TIMESTAMP(TT_OOB_WARMUP_START,my_rank,0);
         RUN_WITH_DURATION(warmup_sec);
+        TIMESTAMP(TT_OOB_WARMUP_END,my_rank,0);
 
         // STEP 3.2: run
         std::cout << "Running test" << std::endl;
+        TIMESTAMP(TT_OOB_TEST_START,my_rank,0);
         RUN_WITH_DURATION(duration_sec);
+        TIMESTAMP(TT_OOB_TEST_END,my_rank,0);
 
         // STEP 3.3: done
         std::cout << "Test done." << std::endl;
@@ -137,6 +155,7 @@ static int oob_perf(size_t      size_byte,
             pending --;
         }
         std::cout << "Sender finished." << std::endl;
+        FLUSH_AND_CLEAR_TIMESTAMP("oob.dat");
     } else { // receiver
         std::cout << "Start as a receiver..." << std::endl;
         size_t nrecv = 0;
