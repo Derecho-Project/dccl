@@ -256,20 +256,23 @@ int main(int argc, char** argv) {
 #ifdef __BUILD_FOR_OMPI__
     int data_size;
     MPI_Type_size(data_type,&data_size);
+    if ((MPI_Alloc_mem(data_count*data_size,MPI_INFO_NULL,&sendbuf) != MPI_SUCCESS) ||
+        (MPI_Alloc_mem(data_count*data_size,MPI_INFO_NULL,&recvbuf) != MPI_SUCCESS)) {
+        std::cerr << "Failed to allocate " << data_count*data_size << " bytes" << std::endl;
+        std::cerr << "Error: " << std::strerror(errno) << std::endl;
+        MPI_Finalize();
+        return 1;
+    }
 #else
     size_t data_size = size_of_type(data_type);
-#endif
     if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*data_size) ||
         posix_memalign(&recvbuf,CACHELINE_SIZE,data_count*data_size)) {
         std::cerr << "Failed to allocate " << data_count*data_size << " bytes" << std::endl;
         std::cerr << "Error:" << std::strerror(errno) << std::endl;
-#ifdef __BUILD_FOR_OMPI__
-        MPI_Finalize();
-#else
         ncclCommFinalize(comm);
-#endif//__BUILD_FOR_OMPI__
         return 1;
     }
+#endif//__BUILD_FOR_OMPI__
     // initialize each byte of sendbuf to 1
     memset(sendbuf,1,data_count*data_size);
     // zero recvbuf
@@ -334,7 +337,11 @@ int main(int argc, char** argv) {
     RUN_WITH_COUNTER(cnt);
     TIMESTAMP(TT_TEST_END,my_rank,0);
     std::cout << "done." << std::endl;
-#ifndef __BUILD_FOR_OMPI__
+#ifdef __BUILD_FOR_OMPI__
+    // free data
+    MPI_Free_mem(sendbuf);
+    MPI_Free_mem(recvbuf);
+#else
     // deregister memory data
     if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
         std::cerr << "Failed to deregister sendbuf@" << sendbuf << "from dccl." << std::endl;
@@ -342,11 +349,11 @@ int main(int argc, char** argv) {
     if (dcclDeregisterCacheMemory(comm,recvbuf) != ncclSuccess) {
         std::cerr << "Failed to deregister recvbuf@" << recvbuf << "from dccl." << std::endl;
     }
-#endif//__BUILD_FOR_OMPI__
 
     // free data
     free(sendbuf);
     free(recvbuf);
+#endif//__BUILD_FOR_OMPI__
 
     // step 5 -flush timestmap
     std::cout << "flush timestamp..." << std::endl;
