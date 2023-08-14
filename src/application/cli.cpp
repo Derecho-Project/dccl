@@ -264,14 +264,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 #ifdef __USE_OMPI_WIN__
-    MPI_Win win;
-    if (MPI_Win_create(sendbuf,data_count*data_size,data_size,MPI_INFO_NULL,MPI_COMM_WORLD,&win)) {
+    MPI_Win s_win,r_win;
+    if (MPI_Win_create(sendbuf,data_count*data_size,data_size,MPI_INFO_NULL,MPI_COMM_WORLD,&s_win)) {
         std::cerr << "Failed to create window for sendbuf@" << sendbuf << std::endl;
         MPI_Finalize();
         return 1;
     }
-    if (MPI_Win_attach(win,recvbuf,data_count*data_size)) {
-        std::cerr << "Failed to attach recvbuf@" << recvbuf << " to window" << std::endl;
+    if (MPI_Win_create(recvbuf,data_count*data_size,data_size,MPI_INFO_NULL,MPI_COMM_WORLD,&r_win)) {
+        std::cerr << "Failed to create window for recvbuf@" << recvbuf << std::endl;
         MPI_Finalize();
         return 1;
     }
@@ -352,8 +352,10 @@ int main(int argc, char** argv) {
     std::cout << "done." << std::endl;
 #ifdef __BUILD_FOR_OMPI__
 #ifdef __USE_OMPI_WIN__
-    MPI_Win_fence(0,win);
-    MPI_Win_free(&win);
+    MPI_Win_fence(0,s_win);
+    MPI_Win_fence(0,r_win);
+    MPI_Win_free(&s_win);
+    MPI_Win_free(&r_win);
 #endif//__USE_OMPI_WIN__
     // free data
     MPI_Free_mem(sendbuf);
