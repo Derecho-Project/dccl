@@ -263,6 +263,19 @@ int main(int argc, char** argv) {
         MPI_Finalize();
         return 1;
     }
+#ifdef __USE_OMPI_WIN__
+    MPI_Win win;
+    if (MPI_Win_create(sendbuf,data_count*data_size,data_size,MPI_INFO_NULL,MPI_COMM_WORLD,&win)) {
+        std::cerr << "Failed to create window for sendbuf@" << sendbuf << std::endl;
+        MPI_Finalize();
+        return 1;
+    }
+    if (MPI_Win_attach(win,recvbuf,data_count*data_size)) {
+        std::cerr << "Failed to attach recvbuf@" << recvbuf << " to window" << std::endl;
+        MPI_Finalize();
+        return 1;
+    }
+#endif//__USE_OMPI_WIN__
 #else
     size_t data_size = size_of_type(data_type);
     if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*data_size) ||
@@ -338,6 +351,10 @@ int main(int argc, char** argv) {
     TIMESTAMP(TT_TEST_END,my_rank,0);
     std::cout << "done." << std::endl;
 #ifdef __BUILD_FOR_OMPI__
+#ifdef __USE_OMPI_WIN__
+    MPI_Win_fence(0,win);
+    MPI_Win_free(&win);
+#endif//__USE_OMPI_WIN__
     // free data
     MPI_Free_mem(sendbuf);
     MPI_Free_mem(recvbuf);
