@@ -87,6 +87,7 @@ target_link_libraries(dccl
     spdlog::spdlog
     OpenSSL::Crypto
     ${mutils_LIBRARIES}
+    wsong
 )
 add_dependencies(dccl core utils)
 

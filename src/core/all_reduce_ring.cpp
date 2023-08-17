@@ -1,5 +1,6 @@
 #include "algorithms.hpp"
 #include "internal_common.hpp"
+#include <wsong/timing.h>
 
 
 namespace dccl {
@@ -58,8 +59,10 @@ ncclResult_t all_reduce_ring(
         riov.iov_len    = data_slot_size;
         SUBGROUP_HANDLE(comm).oob_send(to_id,&siov,1);
         SUBGROUP_HANDLE(comm).oob_recv(from_id,&riov,1);
+        ws_timing_punch(1001022,my_rank,s);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(to_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(from_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
+        ws_timing_punch(1001024,my_rank,s);
         // 2.3 - do reduce...
         ON_DCCL_DATATYPE(datatype,
                          ret=do_reduce,
@@ -70,7 +73,7 @@ ncclResult_t all_reduce_ring(
         }
     }
 
-    TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
+    ws_timing_punch(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
     dccl_trace("{}: ring reduce_scatter done.", __func__);
 
     // STEP 3 ring all gather
@@ -88,7 +91,7 @@ ncclResult_t all_reduce_ring(
         SUBGROUP_HANDLE(comm).wait_for_oob_op(from_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
     }
 
-    TIMESTAMP(TT_ALLREDUCE_ALLGATHER,my_rank,op);
+    ws_timing_punch(TT_ALLREDUCE_ALLGATHER,my_rank,op);
     dccl_trace("{}: ring allgather done.", __func__);
 
     return ret;
