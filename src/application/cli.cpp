@@ -8,8 +8,8 @@
 #ifdef __BUILD_FOR_OMPI__
 #include <mpi.h>
 #include <stdlib.h>
-#include <wsong/timing.h>
 #endif//__BUILD_FOR_OMPI__
+#include <wsong/timing.h>
 
 using namespace dccl;
 
@@ -295,9 +295,9 @@ int main(int argc, char** argv) {
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
         if (api == "all_reduce") { \
-            TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,0); \
+            ws_timing_punch(TT_ALLREDUCE_ENTER,my_rank,0); \
             ompi_err = MPI_Allreduce(MPI_IN_PLACE,sendbuf,data_count,data_type,operation,MPI_COMM_WORLD); \
-            TIMESTAMP(TT_ALLREDUCE_DONE,my_rank,0); \
+            ws_timing_punch(TT_ALLREDUCE_DONE,my_rank,0); \
         } else { \
             ompi_err = ~MPI_SUCCESS; \
         } \
@@ -338,18 +338,18 @@ int main(int argc, char** argv) {
 
     // step 3 - warmup
     std::cout << "warm up..." << std::endl;
-    TIMESTAMP(TT_WARMUP_START,my_rank,0);
+    ws_timing_punch(TT_WARMUP_START,my_rank,0);
     RUN_WITH_COUNTER(warmup_count);
-    TIMESTAMP(TT_WARMUP_END,my_rank,0);
+    ws_timing_punch(TT_WARMUP_END,my_rank,0);
     std::cout << "done." << std::endl;
 
 
     // step 4 - run test
     uint64_t cnt = repeat_count;
     std::cout << "run test..." << std::endl;
-    TIMESTAMP(TT_TEST_START,my_rank,0);
+    ws_timing_punch(TT_TEST_START,my_rank,0);
     RUN_WITH_COUNTER(cnt);
-    TIMESTAMP(TT_TEST_END,my_rank,0);
+    ws_timing_punch(TT_TEST_END,my_rank,0);
     std::cout << "done." << std::endl;
 #ifdef __BUILD_FOR_OMPI__
 #ifdef __USE_OMPI_WIN__
@@ -379,10 +379,9 @@ int main(int argc, char** argv) {
     std::cout << "flush timestamp..." << std::endl;
 #ifdef __BUILD_FOR_OMPI__
     std::string timestamp_fn = "ompi_cli." + std::to_string(my_rank) + ".tt";
-    FLUSH_AND_CLEAR_TIMESTAMP(timestamp_fn);
     ws_timing_save(("ompi_bd."+std::to_string(my_rank)+".tt").c_str());
 #else
-    FLUSH_AND_CLEAR_TIMESTAMP("dccl_cli.tt");
+    ws_timing_save("dccl_cli.tt");
 #endif
     std::cout << "...done" << std::endl;
 
