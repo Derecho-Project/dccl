@@ -17,6 +17,8 @@
 #include "algorithms.hpp"
 #include "blob.hpp"
 
+#include <wsong/timing.h>
+
 using namespace derecho;
 
 namespace dccl {
@@ -271,7 +273,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     uint32_t        my_rank =           dcclGetMyRank(comm);
     ncclResult_t    ret =               ncclSuccess;
     size_t          total_data_size =   count * size_of_type(datatype);
-    TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,op);
+    ws_timing_punch(TT_ALLREDUCE_ENTER,my_rank,op);
 
     // STEP 1: test constraints.
     if (CACHELINE_OFFSET(sendbuff) || CACHELINE_OFFSET(recvbuff)) {
@@ -284,7 +286,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     if (sendbuff != recvbuff) {
         memcpy(recvbuff,sendbuff,total_data_size);
     }
-    TIMESTAMP(TT_ALLREDUCE_MEMCPY,my_rank,op);
+    ws_timing_punch(TT_ALLREDUCE_MEMCPY,my_rank,op);
 
     if (hasCustomizedConfKey(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == false ||
         getConfString(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == DCCL_ALLREDUCE_RING) {
@@ -322,7 +324,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
         }
     }
 
-    TIMESTAMP(TT_ALLREDUCE_DONE,my_rank,op);
+    ws_timing_punch(TT_ALLREDUCE_DONE,my_rank,op);
 
     return ret;
 }
