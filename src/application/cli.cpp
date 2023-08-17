@@ -8,6 +8,7 @@
 #ifdef __BUILD_FOR_OMPI__
 #include <mpi.h>
 #include <stdlib.h>
+#include <wsong/timing.h>
 #endif//__BUILD_FOR_OMPI__
 
 using namespace dccl;
@@ -379,6 +380,7 @@ int main(int argc, char** argv) {
 #ifdef __BUILD_FOR_OMPI__
     std::string timestamp_fn = "ompi_cli." + std::to_string(my_rank) + ".tt";
     FLUSH_AND_CLEAR_TIMESTAMP(timestamp_fn);
+    ws_timing_save(("ompi_bd."+std::to_string(my_rank)+".tt").c_str());
 #else
     FLUSH_AND_CLEAR_TIMESTAMP("dccl_cli.tt");
 #endif

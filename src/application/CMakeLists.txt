@@ -46,7 +46,7 @@ if(MPI_CXX_FOUND AND MPI_CXX_VERSION VERSION_GREATER_EQUAL 3.1)
     else()
         target_compile_definitions(ompi_cli PRIVATE __BUILD_FOR_OMPI__)
     endif()
-    target_link_libraries(ompi_cli PUBLIC MPI::MPI_CXX dccl)
+    target_link_libraries(ompi_cli PUBLIC MPI::MPI_CXX dccl wsong)
 endif()
 
 add_executable(p2p_perf p2p_perf.cpp)
