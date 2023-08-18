@@ -271,11 +271,13 @@ int main(int argc, char** argv) {
         MPI_Finalize();
         return 1;
     }
+    std::cout << "sendbuffer:" << data_count*data_size << " bytes registered @" << sendbuf << std::endl;
     if (MPI_Win_create(recvbuf,data_count*data_size,data_size,MPI_INFO_NULL,MPI_COMM_WORLD,&r_win)) {
         std::cerr << "Failed to create window for recvbuf@" << recvbuf << std::endl;
         MPI_Finalize();
         return 1;
     }
+    std::cout << "recvbuffer:" << data_count*data_size << " bytes registered @" << recvbuf << std::endl;
 #endif//__USE_OMPI_WIN__
 #else
     size_t data_size = size_of_type(data_type);
