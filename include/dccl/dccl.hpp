@@ -208,6 +208,103 @@ ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
     size_t recvcount, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
 
 /**
+ * @brief Broadcast API
+ *
+ * This API is compatible to NVIDIA's NCCL:
+ * " Copies count values from root to all other devices.
+ *   root is the rank (not the CUDA device) where data resides before the
+ *   operation is started.
+ *
+ *   In-place operation will happen if sendbuff == recvbuff. "
+ *
+ * @param[in]   sendbuff    The buffer containing local data to be sent.
+ * @param[out]  recvbuff    The buffer to receive the data.
+ * @param[in]   count       The number of entries in the receive buffer.
+ * @param[in]   datatype    The type of the data.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
+    ncclDataType_t datatype, int root, ncclComm_t comm);
+
+/**
+ * @brief Reduce API
+ *
+ * This API is compatible to NVIDIA's NCCL:
+ * " Reduces data arrays of length count in sendbuff into recvbuff using op
+ *   operation.
+ *   recvbuff may be NULL on all calls except for root device.
+ *   root is the rank (not the CUDA device) where data will reside after the
+ *   operation is complete.
+ *
+ *   In-place operation will happen if sendbuff == recvbuff."
+ *
+ * @param[in]   sendbuff    The buffer containing local data to reduce.
+ * @param[out]  recvbuff    The buffer receiving reduced data.
+ * @param[in]   count       The number of entries in the receive buffer.
+ * @param[in]   datatype    The type of the data.
+ * @param[in]   op          The reduce operation to be performed.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
+    ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm);
+
+/**
+ * @brief AllGather API
+ *
+ * @param[in]   sendbuff        The buffer containing the local data to gather.
+ * @param[out]  recvbuff        The buffer receiving gathered data.
+ * @param[in]   sendcount       The number of data entries in the send buffer.
+ * @param[in]   datatype        The type of the data.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
+    ncclDataType_t datatype, ncclComm_t comm);
+
+/**
+ * @brief Point-to-Point send
+ *
+ * @param[in]   sendbuff        The buffer containing the local data to send.
+ * @param[in]   count           The number of data entries in the send buffer.
+ * @param[in]   datatype        The type of the data.
+ * @param[in]   peer            The rank of the receiver.
+ * @param[in]   comm            The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype,
+    int peer, ncclComm_t comm);
+
+/**
+ * @brief Point-to-Point recv
+ *
+ * @param[in]   recvbuff        The buffer receiving the data from peer.
+ * @param[in]   count           The number of data entries in the buffer.
+ * @param[in]   datatype        The type of the data.
+ * @param[in]   peer            The rank of the receiver.
+ * @param[in]   comm            The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
+    ncclComm_t comm);
+
+/**
  * @}
  */
 
