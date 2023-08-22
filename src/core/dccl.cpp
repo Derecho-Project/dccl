@@ -444,6 +444,66 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
                                ncclDataType_t   datatype,
                                ncclRedOp_t      op,
                                ncclComm_t       comm) {
+    VALIDATE_COMM(comm);
+    uint32_t        my_rank     = dcclGetMyRank(comm);
+    uint32_t        world_size  = dcclGetWorldSize(comm);
+    size_t          slot_size   = recvcount*size_of_type(datatype);
+    size_t          total_size  = world_size*slot_size;
+    ncclResult_t    ret         = ncclSuccess;
+    void*           _sendbuff;
+
+    // prepare in-place buffer
+    if(posix_memalign(&_sendbuff,CACHELINE_SIZE,total_size)) {
+        dccl_error("{}: Failed to allocate {} bytes of memory.", __func__, total_size);
+        ret = ncclSystemError;
+        goto error_group_1;
+    }
+    ret = dcclRegisterCacheMemory(comm,_sendbuff,total_size);
+    if (ret != ncclSuccess) {
+        dccl_error("{}: Failed to register {} bytes of _sendbuf@{:p}.", __func__, total_size, _sendbuff);
+        goto error_group_2;
+    }
+    memcpy(_sendbuff,sendbuffer,total_size);
+    ret = verify_scratchpad(slot_size,comm);
+    if (ret != ncclSuccess) {
+        dccl_error("{}: Failed to verify scratchpad memory with size {}", __func__, slot_size);
+        goto error_group_3;
+    }
+
+    // run reduce scatter
+    ret = algorithm::reduce_scatter_ring(_sendbuff,scratchpad,recvcount*world_size,datatype,op,comm,
+            [world_size](uint32_t orank){return (orank + world_size - 1)%world_size;},
+            [world_size](uint32_t nrank){return (nrank + 1)%world_size;});
+
+    if (ret != ncclSuccess) {
+        dccl_error("{}: Failed to call reduce_scatter_ring.", __func__);
+        goto error_group_3;
+    }
+
+    // copy result to recvbuff
+    memcpy(recvbuffer,
+           reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_sendbuff)+my_rank*slot_size),
+           slot_size);
+
+    // release in-place buffer
+    ret = dcclDeregisterCacheMemory(comm,_sendbuff,total_size);
+    if (ret != ncclSuccess) {
+        dccl_error("{}: Failed to deregister {} bytes of _sendbuf@{:p}.", __func__, total_size, _sendbuff);
+        return ret;
+    }
+    free(_sendbuff);
+
+    return ret;
+
+error_group_3:
+    if(dcclDeregisterCacheMemory(comm,_sendbuff,total_size) != ncclSuccess) {
+        dccl_error("{}: Failed to deregister {} bytes of _sendbuf@{:p}.", __func__, total_size, _sendbuff);
+    }
+error_group_2:
+    free(_sendbuff);
+error_group_1:
+    return ret;
+    // save 
  /*
     VALIDATE_COMM(comm);
 

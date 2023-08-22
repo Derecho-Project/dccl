@@ -226,6 +226,7 @@ int main(int argc, char** argv) {
 #else
     ncclResult_t ret;
     uint32_t my_rank;
+    uint32_t world_size;
     ncclComm_t comm;
 #endif//__BUILD_FOR_OMPI__
 
@@ -248,6 +249,7 @@ int main(int argc, char** argv) {
         return ret;
     }
     my_rank = dcclGetMyRank(comm);
+    world_size = dcclGetWorldSize(comm);
 #endif//__BUILD_FOR_OMPI__
 
     // step 2 - allocating data
@@ -296,7 +298,9 @@ int main(int argc, char** argv) {
         if (api == "all_reduce") { \
             ret = ncclAllReduce(sendbuf,sendbuf,data_count,data_type,operation,comm); \
         } else if (api == "reduce_scatter") { \
-            ret = ncclReduceScatter(sendbuf,recvbuf,data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
+            ret = ncclReduceScatter(sendbuf, \
+                                    reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
+                                    data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
         } else { \
             ret = ncclInvalidArgument; \
         } \
