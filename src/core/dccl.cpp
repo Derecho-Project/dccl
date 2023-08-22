@@ -503,25 +503,22 @@ error_group_2:
     free(_sendbuff);
 error_group_1:
     return ret;
-    // save 
- /*
+}
+
+ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
+        ncclDataType_t datatype, ncclComm_t comm) {
+
     VALIDATE_COMM(comm);
+    uint32_t my_rank    = dcclGetMyRank(comm);
+    void*    slot_base  = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(recvbuff) + sendcount * my_rank * size_of_type(datatype));
 
-    ncclResult_t ret = ncclSuccess;
-
-    //TODO: This is a brutal force wrapper for test. Do the following afterward:
-    // - prepare a writable send buffer
-    // - copy the corresponding block to destination.
-    ret = verify_scratchpad(recvcount*dcclGetWorldSize(comm),comm);
-    if (ret != ncclSuccess) {
-        return ret;
+    if (sendbuff != slot_base) {
+        memcpy(slot_base,sendbuff,sendcount * size_of_type(datatype));
     }
-    return   algorithm::reduce_scatter_recursive_halving(const_cast<void*>(sendbuffer),
-                                                        scratchpad,
-                                                        recvcount*dcclGetWorldSize(comm),
-                                                        datatype,op,comm);
-*/
-    return ncclInvalidUsage;
+
+    return  algorithm::all_gather_ring(recvbuff,sendcount,datatype,comm,
+                            [](uint32_t r){return r;},
+                            [](uint32_t r){return r;});
 }
 
 #ifdef ENABLE_EVALUATION

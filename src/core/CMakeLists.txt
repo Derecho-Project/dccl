@@ -7,6 +7,7 @@ add_library(core OBJECT
     reduce_scatter_recursive_halving.cpp
     reduce_scatter_ring.cpp
     all_gather_recursive_doubling.cpp
+    all_gather_ring.cpp
     all_reduce_recursive_halving_and_doubling.cpp
     all_reduce_ring.cpp)
 target_include_directories(core PRIVATE

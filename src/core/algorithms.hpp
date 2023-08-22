@@ -143,6 +143,35 @@ ncclResult_t all_gather_recursive_doubling(
         const rank_converter_t& to_old_rank);
 
 /**
+ * @brief Ring AllGather algorithm
+ *
+ * This algorithm will do a ring all gather. It assumes that each node owns the data at `myrank`-th `slot`, where
+ * `myrank` and `slot` are decided as follows:
+ * - `myrank`       = to_new_rank(dcclGetMyRank(comm));
+ * - `slot` base    = buffer + `myrank` * count * size_of_type(datatype)
+ * - `slot` size    = count * size_of_type(datatype)
+ * 
+ * @param[in,out]   buffer      The `buffer` is used for both input and output. The data is in the layout described
+ *                              above.
+ * @param[in]       count       The number of entries in the buffer.
+ * @param[in]       datatype    The type of the data.
+ * @param[in]       comm        The DCCL communication object.
+ * @param[in]       to_new_rank An optional lambda that translates the old rank to new rank.
+ * @param[in]       to_old_rank An optional lambda that translates the new rank back to old rank.
+ *
+ * @throws      std::runtime_erro   A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t all_gather_ring(
+        void*                   buffer,
+        size_t                  count,
+        ncclDataType_t          datatype,
+        ncclComm_t              comm,
+        const rank_converter_t& to_new_rank,
+        const rank_converter_t& to_old_rank);
+
+/**
  * @brief AllReduce with recursive-halving reduce-scatter and recursive-doubling all-gather.
  * This implementation is based on Figure 1 in Rabenseifner's paper called
  * [_Optimization of Collective Reduction Operations_]

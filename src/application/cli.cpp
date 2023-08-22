@@ -301,6 +301,10 @@ int main(int argc, char** argv) {
             ret = ncclReduceScatter(sendbuf, \
                                     reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
                                     data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
+        } else if (api == "all_gather") { \
+            ret = ncclAllGather(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
+                                sendbuf, \
+                                data_count/dcclGetWorldSize(comm),data_type,comm); \
         } else { \
             ret = ncclInvalidArgument; \
         } \

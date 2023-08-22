@@ -259,6 +259,14 @@ ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
 /**
  * @brief AllGather API
  *
+ * This API is compatible to NVIDIA's NCCL:
+ * " Each device gathers sendcount values from other GPUs into recvbuff,
+ *   receiving data from rank i at offset i*sendcount.
+ *   Assumes recvcount is equal to nranks*sendcount, which means that recvbuff
+ *   should have a size of at least nranks*sendcount elements.
+ *
+ *   In-place operations will happen if sendbuff == recvbuff + rank * sendcount."
+ *
  * @param[in]   sendbuff        The buffer containing the local data to gather.
  * @param[out]  recvbuff        The buffer receiving gathered data.
  * @param[in]   sendcount       The number of data entries in the send buffer.
