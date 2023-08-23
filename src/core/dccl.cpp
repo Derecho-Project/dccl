@@ -521,7 +521,7 @@ ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcoun
                             [](uint32_t r){return r;});
 }
 
-ncclResult_t ncclSend(void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
+ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
         ncclComm_t comm) {
 
     VALIDATE_COMM(comm);
@@ -533,7 +533,7 @@ ncclResult_t ncclSend(void* sendbuff, size_t count, ncclDataType_t datatype, int
 
     node_id_t peer_id = get_dccl_shard_members(comm).at(peer);
     struct iovec siov;
-    siov.iov_base = sendbuff;
+    siov.iov_base = const_cast<void*>(sendbuff);
     siov.iov_len  = count*size_of_type(datatype);
     SUBGROUP_HANDLE(comm).oob_send(peer_id,&siov,1);
     SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);

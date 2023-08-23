@@ -15,6 +15,7 @@ using namespace dccl;
 const char* help_string = 
     "\t--api,-a     name of the DCCL api to be tested. This option is mandatory. Full api list:\n"
     "\t             scatter,gather,broadcast,send,recv,reduce,all_reduce,reduce_scatter,all_gather\n"
+    "\t             Please note that 'send' and 'recv' only work between rank 0 and 1. \n"
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
     "\t--repeat,-r  number of operations for evaluation, defaulted to 1000.\n"
     "\t--type,-t    type of the data, defaulted to uint32. Full type list:\n"
@@ -305,6 +306,14 @@ int main(int argc, char** argv) {
             ret = ncclAllGather(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
                                 sendbuf, \
                                 data_count/dcclGetWorldSize(comm),data_type,comm); \
+        } else if (api == "send") { \
+            if (my_rank < 2) { \
+                ret = ncclSend(sendbuf,data_count,data_type,1 - my_rank,comm); \
+            } \
+        } else if (api == "recv") { \
+            if (my_rank < 2) { \
+                ret = ncclRecv(sendbuf,data_count,data_type,1 - my_rank, comm); \
+            } \
         } else { \
             ret = ncclInvalidArgument; \
         } \
