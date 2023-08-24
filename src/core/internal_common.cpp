@@ -19,7 +19,7 @@ dcclComm::~dcclComm() {
 }
 
 uint64_t dcclComm::post_bcast_recv_buff(void* recvbuff, size_t len) {
-    std::unique_lock<std::mutex> lock(this->broadcast_queue_mutex);
+    std::unique_lock<std::mutex> state_lock(this->delivery_state_mutex);
     // update seed
     // The following parameters are from MIMIX(Donald Knuth)
     // a = 6364136223846793005
@@ -28,32 +28,38 @@ uint64_t dcclComm::post_bcast_recv_buff(void* recvbuff, size_t len) {
     do {
         bcast_id_seed = bcast_id_seed * 6364136223846793005 + 1442695040888963407;
     } while (delivery_state.find(bcast_id_seed)!=delivery_state.cend());
-    broadcast_queue.emplace(bcast_id_seed,recvbuff,len);
     delivery_state.emplace(bcast_id_seed,bcast_delivery_state_t::undelivered);
-    lock.unlock();
+    state_lock.unlock();
+
+    std::unique_lock<std::mutex> queue_lock(this->broadcast_queue_mutex);
+    broadcast_queue.emplace(bcast_id_seed,recvbuff,len);
+    queue_lock.unlock();
     broadcast_queue_cv.notify_all();
 
     return bcast_id_seed;
 }
 
 void dcclComm::on_bcast(const std::function<bool(void*,const size_t&)>& data_generator) {
-    std::unique_lock<std::mutex> lock(this->broadcast_queue_mutex);
+    std::unique_lock<std::mutex> queue_lock(this->broadcast_queue_mutex);
     // pick bcast_id
-    broadcast_queue_cv.wait(lock, [this]{return !broadcast_queue.empty();});
+    broadcast_queue_cv.wait(queue_lock, [this]{return !broadcast_queue.empty();});
     uint64_t bcast_id = std::get<0>(broadcast_queue.front());
-    assert(delivery_state.find(bcast_id) != delivery_state.cend());
+    // assert(delivery_state.find(bcast_id) != delivery_state.cend());
     void*    recvbuff = std::get<1>(broadcast_queue.front());
     size_t   buffsize = std::get<2>(broadcast_queue.front());
     broadcast_queue.pop();
+    queue_lock.unlock();
     // process data
-    delivery_state[bcast_id] = 
-        (data_generator(recvbuff,buffsize)) ? bcast_delivery_state_t::delivered : bcast_delivery_state_t::failed;
-    lock.unlock();
-    broadcast_queue_cv.notify_all();
+    bcast_delivery_state_t target_state = (data_generator(recvbuff,buffsize)) ? bcast_delivery_state_t::delivered : bcast_delivery_state_t::failed;
+    // update state
+    std::unique_lock<std::mutex> state_lock(this->delivery_state_mutex);
+    delivery_state[bcast_id] = target_state;
+    state_lock.unlock();
+    delivery_state_cv.notify_all();
 }
 
 dcclComm::bcast_delivery_state_t dcclComm::query_bcast(const uint64_t& bcast_id) {
-    std::unique_lock<std::mutex> lock(this->broadcast_queue_mutex);
+    std::lock_guard<std::mutex> state_lock(this->delivery_state_mutex);
     if (delivery_state.find(bcast_id) == delivery_state.cend()) {
         return bcast_delivery_state_t::nonexist;
     } else {
@@ -62,8 +68,8 @@ dcclComm::bcast_delivery_state_t dcclComm::query_bcast(const uint64_t& bcast_id)
 }
 
 dcclComm::bcast_delivery_state_t dcclComm::wait_bcast(const uint64_t& bcast_id) {
-    std::unique_lock<std::mutex> lock(this->broadcast_queue_mutex);
-    broadcast_queue_cv.wait(lock,[this,bcast_id]{
+    std::unique_lock<std::mutex> state_lock(this->delivery_state_mutex);
+    delivery_state_cv.wait(state_lock,[this,bcast_id]{
             return  delivery_state.find(bcast_id)==delivery_state.cend() || 
                     delivery_state.at(bcast_id) != undelivered;});
     if (delivery_state.find(bcast_id) == delivery_state.cend()) {
@@ -74,7 +80,7 @@ dcclComm::bcast_delivery_state_t dcclComm::wait_bcast(const uint64_t& bcast_id) 
 }
 
 dcclComm::bcast_delivery_state_t dcclComm::clear_bcast(const uint64_t& bcast_id) {
-    std::unique_lock<std::mutex> lock(this->broadcast_queue_mutex);
+    std::unique_lock<std::mutex> state_lock(this->delivery_state_mutex);
     bcast_delivery_state_t ret = nonexist;
     if (delivery_state.find(bcast_id) != delivery_state.cend()) {
         bcast_delivery_state_t ret = delivery_state.at(bcast_id);

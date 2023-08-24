@@ -135,9 +135,9 @@ public:
     } bcast_delivery_state_t;
 private:
     /**
-     * @brief   broadcast buffer map mutex
+     * @brief   broadcast queue mutex
      *
-     * Broadcast buffer map is used for coordination between the broadcast sender and receiver. The caller of 
+     * Broadcast queue is used for coordination between the broadcast sender and receiver. The caller of 
      * `ncclBroadcast` or `ncclBcast` register the receiving buffer to the broadcast buffer map so that, once
      * a message is recieved (by derecho predicate thread), the data will be moved to the receiving buffer.
      *
@@ -151,9 +151,17 @@ private:
      */
     std::mutex                          broadcast_queue_mutex;
     /**
+     * @brief   delivery state mutex
+     */
+    std::mutex                          delivery_state_mutex;
+    /**
      * @brief   broadcast queue condition variable
      */
     std::condition_variable             broadcast_queue_cv;
+    /**
+     * @brief   delivery state condition variable
+     */
+    std::condition_variable             delivery_state_cv;
     /**
      * @brief   broadcast queue
      * a queue of 3-tuple (broadcast_id,buffer ptr,buffer size).
