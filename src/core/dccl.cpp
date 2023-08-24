@@ -176,47 +176,6 @@ ncclResult_t DCCLSubgroupType::reduce(const Blob& sendbuf, const size_t count, n
     }
 
     void* rbuf = this->recvbuf.load();
-    /*
-    switch(datatype) {
-    case ncclInt8: // ncclChar
-        ret = do_reduce<int8_t>(sendbuf.bytes,rbuf,count,op);
-        break;
-    case ncclUint8:
-        ret = do_reduce<uint8_t>(sendbuf.bytes,rbuf,count,op);
-        break;
-    case ncclInt32: // ncclInt
-        ret = do_reduce<int32_t>(sendbuf.bytes,rbuf,count,op);
-        break;
-    case ncclUint32:
-        ret = do_reduce<uint32_t>(sendbuf.bytes,rbuf,count,op);
-        break;
-    case ncclInt64:
-        ret = do_reduce<uint64_t>(sendbuf.bytes,rbuf,count,op);
-        break;
-    case ncclUint64:
-        ret = do_reduce<uint32_t>(sendbuf.bytes,rbuf,count,op);
-        break;
-    case ncclFloat16: // ncclHalf:
-        // These types are only supported in C++23
-        ret = ncclInvalidArgument;
-        break;
-    case ncclFloat32: // ncclFloat
-        ret = do_reduce<float>(sendbuf.bytes,rbuf,count,op);
-        break;
-    case ncclFloat64: // ncclDouble
-        ret = do_reduce<double>(sendbuf.bytes,rbuf,count,op);
-        break;
-#if defined(__CUDA_BF16_TYPES_EXIST__)
-    case ncclBfloat16:
-        // To be supported.
-        ret = ncclInvalidUsage;
-        break;
-#endif
-    default:
-        // unknown type.
-        ret = ncclInvalidArgument;
-    }
-    */
     ret = ncclInvalidArgument;
     ON_DCCL_DATATYPE(datatype,ret=do_reduce,sendbuf.bytes,rbuf,count,op);
     return ret;
@@ -225,7 +184,7 @@ ncclResult_t DCCLSubgroupType::reduce(const Blob& sendbuf, const size_t count, n
 //------------------------------------------------------
 
 ncclResult_t ncclCommInit(ncclComm_t* comm) {
-    ncclComm_t      comm_handle = static_cast<ncclComm_t>(calloc(1,sizeof(*comm_handle)));
+    ncclComm_t      comm_handle = new dcclComm();
 
     if (!comm_handle) {
         // ENOMEM: no memory
@@ -234,9 +193,28 @@ ncclResult_t ncclCommInit(ncclComm_t* comm) {
 
     // create a subgroup
     SubgroupInfo si{make_subgroup_allocator<DCCLSubgroupType>()};
+    auto broadcast_lambda = [comm_handle](subgroup_id_t sid,
+                                          node_id_t nid,
+                                          message_id_t mid,
+                                          std::optional<std::pair<uint8_t*, long long int>> blob,
+                                          persistent::version_t ver)->void {
+        comm_handle->on_bcast([&blob](void* rbuf,const size_t& buflen)->bool{
+            assert(blob.has_value());
+            size_t copylen = static_cast<size_t>(blob.value().second);
+            bool ret = true;
+            if (buflen < copylen) {
+                dccl_error("{}: Broadcast error: buffer size {} is too small to receive {} bytes. Data chopped.",
+                           __func__, buflen, copylen);
+                copylen = buflen;
+                ret = false;
+            }
+            memcpy(rbuf,static_cast<void*>(blob.value().first),copylen);
+            return ret;
+        });
+    };
     Group<DCCLSubgroupType>* group = 
         new Group<DCCLSubgroupType>(
-            {},
+            {broadcast_lambda,nullptr,nullptr,nullptr},
             si,{},{},
             [&comm_handle](
                 persistent::PersistentRegistry*,
@@ -258,7 +236,7 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
         group->leave();
         delete group;
     }
-    free(comm);
+    delete comm;
     return ncclSuccess;
 }
 
@@ -505,9 +483,47 @@ error_group_1:
     return ret;
 }
 
+ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
+        ncclDataType_t datatype, int root, ncclComm_t comm) {
+    VALIDATE_COMM(comm);
+    ncclResult_t    ret     = ncclSuccess;
+    uint32_t    my_rank     = dcclGetMyRank(comm);
+    size_t      data_size   = count * size_of_type(datatype);
+    // step 1 post buffer
+    uint64_t    bcast_id    = comm->post_bcast_recv_buff(recvbuff,data_size);
+    // step 2 send message
+    if (my_rank == static_cast<uint32_t>(root)) {
+        SUBGROUP_HANDLE(comm).send(data_size,[sendbuff,data_size](uint8_t* buf)->void{
+            memcpy(static_cast<void*>(buf),sendbuff,data_size);
+        });
+    }
+    // step 3 wait for data
+    switch(comm->wait_bcast(bcast_id)) {
+    case dcclComm::bcast_delivery_state_t::nonexist:
+        dccl_error("{} broadcast failure: delivery state (nonexist) is abnormal.",__func__);
+        ret = ncclInternalError;
+        break;
+    case dcclComm::bcast_delivery_state_t::undelivered:
+        dccl_error("{} broadcast failure: delivery state (undelivered) is abnormal.",__func__);
+        ret = ncclInternalError;
+        break;
+    case dcclComm::bcast_delivery_state_t::failed:
+        dccl_error("{} broadcast failed. Buffer size might not match the received message.",__func__);
+        ret = ncclInternalError;
+        break;
+    default:
+        break;
+    }
+    return ret;
+}
+
+ncclResult_t ncclBcast(void* buff, size_t count, ncclDataType_t datatype,
+        int root, ncclComm_t comm) {
+    return ncclBroadcast(buff,buff,count,datatype,root,comm);
+}
+
 ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
         ncclDataType_t datatype, ncclComm_t comm) {
-
     VALIDATE_COMM(comm);
     uint32_t my_rank    = dcclGetMyRank(comm);
     void*    slot_base  = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(recvbuff) + sendcount * my_rank * size_of_type(datatype));
@@ -523,7 +539,6 @@ ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcoun
 
 ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
         ncclComm_t comm) {
-
     VALIDATE_COMM(comm);
     uint32_t my_rank    = dcclGetMyRank(comm);
     if (static_cast<uint32_t>(peer) == my_rank) {

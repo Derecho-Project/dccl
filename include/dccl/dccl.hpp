@@ -19,8 +19,17 @@
  * We put all DCCL API to the `dccl` namespace. 
  */
 
+/**
+ * @brief option key in derecho.cfg
+ */
 #define DCCL_ALLREDUCE_ALGORITHM_CONFSTR    "DCCL/allreduce_algorithm"
+/**
+ * @brief option value in derecho.cfg
+ */
 #define DCCL_ALLREDUCE_RING                 "ring"
+/**
+ * @brief option value in derecho.cfg
+ */
 #define DCCL_ALLREDUCE_RABINSEIFNER         "rabinseifner"
 
 /**
@@ -228,6 +237,23 @@ ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
  * @return      Error code
  */
 ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
+    ncclDataType_t datatype, int root, ncclComm_t comm);
+
+/**
+ * @brief Bcast API
+ *
+ * This API is compatible to NVIDIA's NCCL
+ *
+ * @param[in/out]   buff    The buffer to receive the data.
+ * @param[in]   count       The number of entries in the receive buffer.
+ * @param[in]   datatype    The type of the data.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclBcast(void* buff, size_t count,
     ncclDataType_t datatype, int root, ncclComm_t comm);
 
 /**

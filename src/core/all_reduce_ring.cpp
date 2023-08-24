@@ -14,7 +14,6 @@ ncclResult_t all_reduce_ring(
         ncclComm_t      comm) {
     uint32_t        my_rank = dcclGetMyRank(comm);
     ncclResult_t    ret = ncclSuccess;
-    size_t          total_data_size = count * size_of_type(datatype);
     uint32_t        world_size =    dcclGetWorldSize(comm);
     auto            shard_members  = get_dccl_shard_members(comm);
 
