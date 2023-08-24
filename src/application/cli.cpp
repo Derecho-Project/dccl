@@ -18,6 +18,7 @@ const char* help_string =
     "\t             Please note that\n"
     "\t             - 'send' and 'recv' only work between rank 0 and 1. \n"
     "\t             - only rank 0 will 'broadcast', all other node will receive. \n"
+    "\t             - 'reduce' will reduce to rank 0.\n"
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
     "\t--repeat,-r  number of operations for evaluation, defaulted to 1000.\n"
     "\t--type,-t    type of the data, defaulted to uint32. Full type list:\n"
@@ -307,6 +308,8 @@ int main(int argc, char** argv) {
             ret = ncclAllGather(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
                                 sendbuf, \
                                 data_count/dcclGetWorldSize(comm),data_type,comm); \
+        } else if (api == "reduce") { \
+            ret = ncclReduce(sendbuf,sendbuf,data_count,data_type,operation,0,comm); \
         } else if (api == "broadcast") { \
             ret = ncclBroadcast(sendbuf,recvbuf,data_count, data_type, 0, comm); \
         } else if (api == "send") { \

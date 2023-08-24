@@ -305,93 +305,6 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     return ret;
 }
 
-/* deprecated
-ncclResult_t ncclAllReduce(const void*      sendbuff,
-                           void*            recvbuff,
-                           size_t           count,
-                           ncclDataType_t   datatype,
-                           ncclRedOp_t      op,
-                           ncclComm_t       comm) {
-    if (!comm || !comm->derecho_group_handle) {
-        return ncclInvalidArgument;
-    }
-    std::unique_ptr<Blob> blob_to_send;
-    bool inplace = (sendbuff == recvbuff);
-    // if inplace, we have to copy the send data first, so set emplaced = !inplace
-    // otherwise, we skip the copy.
-    blob_to_send = std::make_unique<Blob>(
-                        reinterpret_cast<const uint8_t*>(sendbuff),
-                        count*size_of_type(datatype),!inplace);
-    ncclResult_t ret;
-    if (!inplace) {
-        // we have to initialize the receive buffer if it's not inplace
-        switch(datatype) {
-        case ncclInt8: // ncclChar
-            ret = init_receive_buf<int8_t>(recvbuff,count,op);
-            break;
-        case ncclUint8:
-            ret = init_receive_buf<uint8_t>(recvbuff,count,op);
-            break;
-        case ncclInt32: // ncclInt
-            ret = init_receive_buf<int32_t>(recvbuff,count,op);
-            break;
-        case ncclUint32:
-            ret = init_receive_buf<uint32_t>(recvbuff,count,op);
-            break;
-        case ncclInt64:
-            ret = init_receive_buf<int64_t>(recvbuff,count,op);
-            break;
-        case ncclUint64:
-            ret = init_receive_buf<uint64_t>(recvbuff,count,op);
-            break;
-        case ncclFloat16: // ncclHalf:
-            // These types are only supported in C++23
-            ret = ncclInvalidArgument;
-            break;
-        case ncclFloat32: // ncclFloat
-            ret = init_receive_buf<float>(recvbuff,count,op);
-            break;
-        case ncclFloat64: // ncclDouble
-            ret = init_receive_buf<double>(recvbuff,count,op);
-            break;
-#if defined(__CUDA_BF16_TYPES_EXIST__)
-        case ncclBfloat16:
-            // To be supported.
-            ret = ncclInvalidUsage;
-            break;
-#endif
-        default:
-            // unknown type.
-            ret = ncclInvalidArgument;
-        }
-    }
-
-
-    if (ret != ncclSuccess) {
-        return ret;
-    }
-
-    Group<DCCLSubgroupType>*            group = 
-                                        reinterpret_cast<Group<DCCLSubgroupType>*>(comm->derecho_group_handle);
-    DCCLSubgroupType*                   group_object = 
-                                        reinterpret_cast<DCCLSubgroupType*>(comm->derecho_group_object);
-    auto&                               dccl_subgroup_handle =
-                                        group->get_subgroup<DCCLSubgroupType>();
-
-    group_object->recvbuf.store(recvbuff);
-    group->barrier_sync();
-    auto results = dccl_subgroup_handle.ordered_send<RPC_NAME(reduce)>(*blob_to_send,count,datatype,op,inplace);
-    for(auto& reply_pair : results.get()) {
-        ret = reply_pair.second.get();
-        if (ret != ncclSuccess) {
-            break;
-        }
-    }
-    group->barrier_sync();
-    return ret;
-}
-*/
-
 ncclResult_t dcclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
     VALIDATE_COMM(comm);
 
@@ -522,6 +435,93 @@ ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
 ncclResult_t ncclBcast(void* buff, size_t count, ncclDataType_t datatype,
         int root, ncclComm_t comm) {
     return ncclBroadcast(buff,buff,count,datatype,root,comm);
+}
+
+ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
+        ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm) {
+    uint32_t        my_rank =           dcclGetMyRank(comm);
+    ncclResult_t    ret =               ncclSuccess;
+    size_t          total_data_size =   count * size_of_type(datatype);
+    uint32_t        world_size =        dcclGetWorldSize(comm);
+
+    // STEP 1: test constraints.
+    if (CACHELINE_OFFSET(sendbuff) || CACHELINE_OFFSET(recvbuff)) {
+        dccl_warn("Either sendbuff@{:p} or recvbuff@{:p} is not cacheline ({} bytes) aligned. "
+                  "Possible performance degradation might occur.",
+                  sendbuff, recvbuff, CACHELINE_SIZE);
+    }
+    if (count % world_size != 0) {
+        dccl_error("{}: Current implementation is ring-based and we enforce 'count % world_size == 0'."
+                   " Cannot continue because count ({}) is not integral times of world_size ({}).",
+                   __func__, count, world_size);
+        return ncclInvalidArgument;
+    }
+
+    // STEP 2: test role
+    bool    iamroot         = (my_rank == static_cast<uint64_t>(root));
+    size_t  slot_size       = total_data_size/world_size;
+    if (slot_size%CACHELINE_SIZE) {
+        dccl_warn("{}: slot_size{} is not integral times of cacheline size{}, expect suboptimal performance.",
+                  __func__, slot_size, CACHELINE_SIZE);
+    }
+    void*   workspace       = nullptr;
+    size_t  workspace_size  = (iamroot ? slot_size : (slot_size + total_data_size));
+    void*   rbuf            = nullptr;
+    auto    shard_members   = get_dccl_shard_members(comm);
+
+    ret = verify_scratchpad(workspace_size,comm);
+    if (ret != ncclSuccess) {
+        dccl_error("{} failed to verify scratchpad memory with size {}",
+                   __func__, slot_size);
+        goto error_group_1;
+    }
+    workspace = scratchpad;
+
+    if (iamroot) {
+        rbuf = recvbuff;
+    } else { // using the uppermost space in scratchpad.
+        rbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(scratchpad) + slot_size);
+    }
+
+    if (sendbuff != rbuf) {
+        memcpy(rbuf,sendbuff,total_data_size);
+    }
+
+    // STEP 3: run ring reduce-scatter
+    ret = algorithm::reduce_scatter_ring(rbuf,workspace,count,datatype,op,comm,
+            [world_size](uint32_t orank){return (orank + world_size - 1)%world_size;},
+            [world_size](uint32_t nrank){return (nrank + 1)%world_size;});
+
+    // STEP 4: collect data.
+    if (iamroot) {
+        for (uint32_t r = 0; r < world_size; r++) {
+            if (r == my_rank) {
+                continue;
+            }
+            struct iovec riov;
+            riov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(rbuf) + slot_size * r);
+            riov.iov_len    = slot_size;
+            SUBGROUP_HANDLE(comm).oob_recv(shard_members.at(r),&riov,1);
+        }
+
+        for (uint32_t r = 0; r < world_size; r++) {
+            if (r == my_rank) {
+                continue;
+            }
+            SUBGROUP_HANDLE(comm).wait_for_oob_op(shard_members.at(r),OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
+        }
+    } else {
+        struct iovec siov;
+        siov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(rbuf) + slot_size * my_rank);
+        siov.iov_len    = slot_size;
+        SUBGROUP_HANDLE(comm).oob_send(shard_members.at(root),&siov,1);
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(shard_members.at(root),OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
+    }
+
+    return ret;
+
+error_group_1:
+    return ret;
 }
 
 ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
