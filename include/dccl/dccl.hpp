@@ -10,13 +10,24 @@
 
 /**
  * @file    dccl.hpp
- * @brief   Derecho Collective Communication Library (DCCL) API
+ * @brief   Derecho Collective Communications Library (DCCL) API
  * @see     dccl
  *
  * This file contains the declaration of the Derecho Collective Communication Library (DCCL) API. Similar to 
  * [RCCL](https://rccl.readthedocs.io/en/develop/api.html), DCCL is compatible to 
  * [NCCL](https://docs.nvidia.com/deeplearning/nccl/archives/nccl_296/user-guide/docs/api.html).
  * We put all DCCL API to the `dccl` namespace. 
+ *
+ * @mainpage Derecho Collective Communications Library (DCCL)
+ *
+ * DCCL implements NCCL's API but built on Derecho. The source code arrangement follows Derecho and Cascade
+ * conventions.
+ *
+ * @section concept_sec Design Concepts
+ *
+ * @section apiov_sec API Overview
+ *
+ * @section rm_sec Roadmap
  */
 
 /**
