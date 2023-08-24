@@ -38,11 +38,14 @@ uint64_t dcclComm::post_bcast_recv_buff(void* recvbuff, size_t len) {
 
 void dcclComm::on_bcast(const std::function<bool(void*,const size_t&)>& data_generator) {
     std::unique_lock<std::mutex> lock(this->broadcast_queue_mutex);
+    // pick bcast_id
     broadcast_queue_cv.wait(lock, [this]{return !broadcast_queue.empty();});
     uint64_t bcast_id = std::get<0>(broadcast_queue.front());
     assert(delivery_state.find(bcast_id) != delivery_state.cend());
     void*    recvbuff = std::get<1>(broadcast_queue.front());
     size_t   buffsize = std::get<2>(broadcast_queue.front());
+    broadcast_queue.pop();
+    // process data
     delivery_state[bcast_id] = 
         (data_generator(recvbuff,buffsize)) ? bcast_delivery_state_t::delivered : bcast_delivery_state_t::failed;
     lock.unlock();

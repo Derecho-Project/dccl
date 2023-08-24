@@ -275,10 +275,9 @@ int main(int argc, char** argv) {
 #endif//__BUILD_FOR_OMPI__
         return 1;
     }
-    // initialize each byte of sendbuf to 1
-    memset(sendbuf,1,data_count*data_size);
-    // zero recvbuf
-    bzero(recvbuf,data_count*data_size);
+    // initialize sendbuf and recvbuf
+    memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
+    memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
 #ifdef __BUILD_FOR_OMPI__
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \

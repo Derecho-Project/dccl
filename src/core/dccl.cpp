@@ -510,8 +510,10 @@ ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
     case dcclComm::bcast_delivery_state_t::failed:
         dccl_error("{} broadcast failed. Buffer size might not match the received message.",__func__);
         ret = ncclInternalError;
+        comm->clear_bcast(bcast_id);
         break;
     default:
+        comm->clear_bcast(bcast_id);
         break;
     }
     return ret;
