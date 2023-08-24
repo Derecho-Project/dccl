@@ -226,6 +226,21 @@ ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
  *
  *   In-place operation will happen if sendbuff == recvbuff. "
  *
+ * IMPORTANT: We assume that calls to broadcast arrive in the same order on all nodes.
+ * IMPORTANT: Although our inner implementation can be non-blocking: a call to broadcast returns a uint64_t bcast_id,
+ *            which can be used to query the state of broadcast later, we didn't do it yet. Why? let's say we have 
+ *            two nodes in the system A and B. Both A and B calls the following broadcast in the same order:
+ *            -# bid1 = nb_broadcast(...,root=A,...);
+ *            -# bid2 = nb_broadcast(...,root=B,...);
+ *            -# wait_for(bid1);
+ *            -# wait_for(bid2);
+ *            There is no guarantee that node A will broadcast earlier than node B without a causality between A and B.
+ *            However, a series of broadcasts sent by a same thread can leverage the non-blocking mechanism because the
+ *            sending thread introduce causality. Due to the above complexity, we decide to only expose blocking API so
+ *            far.
+ * IMPORTANT: Due to the current Derecho design, we DO need copy data on send and receive. This is going to be solved
+ *            in our real-zerocopy design.
+ *
  * @param[in]   sendbuff    The buffer containing local data to be sent.
  * @param[out]  recvbuff    The buffer to receive the data.
  * @param[in]   count       The number of entries in the receive buffer.
