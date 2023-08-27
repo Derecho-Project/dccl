@@ -104,9 +104,41 @@ install(DIRECTORY
         PATTERN "*.h"
         PATTERN "*.hpp")
 
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/dccl/dcclConfigVersion.cmake"
+    VERSION ${dccl_VERSION}
+    COMPATIBILITY AnyNewerVersion
+)
+
+export(EXPORT dcclTargets
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/dccl/dcclTargets.cmake"
+)
+
+set(ConfigPackageLocation ${CMAKE_INSTALL_LIBDIR}/cmake/dccl)
+
+configure_package_config_file(dcclConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/dccl/dcclConfig.cmake"
+    INSTALL_DESTINATION ${ConfigPackageLocation}
+    PATH_VARS CMAKE_INSTALL_LIBDIR CMAKE_INSTALL_INCLUDEDIR ConfigPackageLocation
+)
+
+install(EXPORT dcclTargets
+        FILE dcclTargets.cmake
+        NAMESPACE derecho::
+        DESTINATION ${ConfigPackageLocation}
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/dccl/dcclConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/dccl/dcclConfigVersion.cmake"
+    DESTINATION ${ConfigPackageLocation}
+)
+
 if (DOXYGEN_FOUND)
     # create docs
     doxygen_add_docs(docs
+        ${CMAKE_SOURCE_DIR}/README.md
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src
         ALL

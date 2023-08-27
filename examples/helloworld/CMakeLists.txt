@@ -25,14 +25,6 @@ add_custom_command(TARGET helloworld POST_BUILD
         ${CMAKE_CURRENT_BINARY_DIR}/cfg/n2/layout.json
     COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/layout.json
         ${CMAKE_CURRENT_BINARY_DIR}/cfg/n3/layout.json
-    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/layout.json
-        ${CMAKE_CURRENT_BINARY_DIR}/cfg/n4/layout.json
-    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/layout.json
-        ${CMAKE_CURRENT_BINARY_DIR}/cfg/n5/layout.json
-    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/layout.json
-        ${CMAKE_CURRENT_BINARY_DIR}/cfg/n6/layout.json
-    COMMAND ln -sf ${CMAKE_CURRENT_BINARY_DIR}/cfg/layout.json
-        ${CMAKE_CURRENT_BINARY_DIR}/cfg/n7/layout.json
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/cfg/layout.json
     COMMENT "prepare demo configuration"
 )

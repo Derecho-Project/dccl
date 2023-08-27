@@ -18,16 +18,6 @@
  * [NCCL](https://docs.nvidia.com/deeplearning/nccl/archives/nccl_296/user-guide/docs/api.html).
  * We put all DCCL API to the `dccl` namespace. 
  *
- * @mainpage Derecho Collective Communications Library (DCCL)
- *
- * DCCL implements NCCL's API but built on Derecho. The source code arrangement follows Derecho and Cascade
- * conventions.
- *
- * @section concept_sec Design Concepts
- *
- * @section apiov_sec API Overview
- *
- * @section rm_sec Roadmap
  */
 
 /**

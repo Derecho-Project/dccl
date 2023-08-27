@@ -3,8 +3,8 @@
         "type_alias":   "DCCLSubgroupType",
         "layout":       [
                             {
-                                "min_nodes_by_shard": ["3"],
-                                "max_nodes_by_shard": ["8"],
+                                "min_nodes_by_shard": ["4"],
+                                "max_nodes_by_shard": ["4"],
                                 "delivery_modes_by_shard": ["Ordered"],
                                 "profiles_by_shard": ["DEFAULT"]
                             }
