@@ -53,7 +53,7 @@ dccl/build/src/application/dccl_cli \
 
 # STEP 4 - collect data
 if [ ${my_id} == "0" ]; then
-    dat=${ar_alg}-c${count}w${warmup_iter}r${run_iter}
+    dat=${ar_alg}-dccl-c${count}w${warmup_iter}r${run_iter}
     mkdir ${dat}
 
     for ip in `cat nodes.private.list`

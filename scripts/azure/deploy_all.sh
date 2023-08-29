@@ -56,3 +56,9 @@ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.dccl/opt ..
 make -j `nproc`
 make install
 cd ../..
+
+# 5 - install peer's host
+for h in `cat myhostfile`
+do
+    ssh-keyscan $h >> ~/.ssh/known_hosts
+done
