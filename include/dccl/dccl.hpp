@@ -31,7 +31,7 @@
 /**
  * @brief option value in derecho.cfg
  */
-#define DCCL_ALLREDUCE_RABINSEIFNER         "rabinseifner"
+#define DCCL_ALLREDUCE_RABENSEIFNER         "rabenseifner"
 
 /**
  * @brief DCCL namespace contains all API declaration and definition.

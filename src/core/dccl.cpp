@@ -282,7 +282,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
             return ret;
         }
 
-    } else if (getConfString(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == DCCL_ALLREDUCE_RABINSEIFNER) {
+    } else if (getConfString(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == DCCL_ALLREDUCE_RABENSEIFNER) {
     
         // STEP 3: verify_scratchpad
         ret = verify_scratchpad(total_data_size>>1,comm);
