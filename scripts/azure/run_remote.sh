@@ -20,5 +20,7 @@ do
 done
 
 # collect data
-scp -oStrictHostKeyChecking=no ${root}:.dccl/${alg}-*-c${COUNT}w${WARMUP_ITER}r${RUN_ITER}.tar.bz2 .
-
+for alg in ring rabenseifner
+do
+    scp -oStrictHostKeyChecking=no ${root}:.dccl/${alg}-*-c${COUNT}w${WARMUP_ITER}r${RUN_ITER}.tar.bz2 .
+done
