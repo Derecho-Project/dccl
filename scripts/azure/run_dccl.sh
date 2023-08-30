@@ -48,6 +48,8 @@ cat derecho.cfg.template \
     > derecho.cfg
 
 # STEP 3 - run experiment
+pkill -9 dccl_cli
+sleep 3
 LD_LIBRARY_PATH=$HOME/${BENCHMARK_WORKSPACE}/opt/lib \
 numactl -m ${numa_node} -N ${numa_node} \
 dccl/build/src/application/dccl_cli \

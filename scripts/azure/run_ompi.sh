@@ -28,6 +28,8 @@ fi
 world_size=`cat myhostfile | wc -l`
 
 # run ob1
+pkill -9 ompi_cli
+sleep 3
 $HOME/${BENCHMARK_WORKSPACE}/opt/bin/mpirun \
 --hostfile myhostfile -n ${world_size} \
 -rf myrankfile --report-bindings \
@@ -52,6 +54,8 @@ tar -jcf ${dat}.tar.bz2 ${dat}
 rm -rf ${dat}
 
 # run ucx
+pkill -9 ompi_cli
+sleep 3
 $HOME/${BENCHMARK_WORKSPACE}/opt/bin/mpirun \
 --hostfile myhostfile -n ${world_size} \
 -rf myrankfile --report-bindings \
