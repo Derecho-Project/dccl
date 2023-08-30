@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source common_env.sh
 
 if [ $# -lt 3 ]; then
     echo "USAGE: $0 <count> <#wi> <#ri> [alg]"
@@ -43,10 +44,11 @@ cat derecho.cfg.template \
     > derecho.cfg
 
 # STEP 3 - run experiment
-LD_LIBRARY_PATH=$HOME/.dccl/opt/lib \
+LD_LIBRARY_PATH=$HOME/${BENCHMARK_WORKSPACE}/opt/lib \
 numactl -m ${numa_node} -N ${numa_node} \
 dccl/build/src/application/dccl_cli \
     -a all_reduce \
+    -t ${DATA_TYPE} \
     -c ${count} \
     -w ${warmup_iter} \
     -r ${run_iter}
@@ -58,7 +60,7 @@ if [ ${my_id} == "0" ]; then
 
     for ip in `cat nodes.private.list`
     do
-        scp -oStrictHostKeyChecking=no ${ip}:.dccl/dccl_cli.tt ${dat}/${ip}.tt
+        scp -oStrictHostKeyChecking=no ${ip}:${BENCHMARK_WORKSPACE}/dccl_cli.tt ${dat}/${ip}.tt
     done
     tar -jcf ${dat}.tar.bz2 ${dat}
     rm -rf ${dat}

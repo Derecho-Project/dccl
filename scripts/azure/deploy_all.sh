@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-export PREFIX=$HOME/.dccl
+source common_env.sh
+
+export PREFIX=$HOME/${BENCHMARK_WORKSPACE}
 export INSTALL_PREFIX=$PREFIX/opt
 
 # 0 - install basic things
@@ -30,16 +32,18 @@ unset CXX
 git clone https://github.com/derecho-project/derecho.git
 cd derecho
 git checkout oob
-scripts/prerequisites/install-mutils.sh $HOME/.dccl/opt
-scripts/prerequisites/install-mutils-containers.sh $HOME/.dccl/opt
-scripts/prerequisites/install-libfabric.sh $HOME/.dccl/opt
-scripts/prerequisites/install-json.sh $HOME/.dccl/opt
-export CMAKE_PREFIX_PATH=$HOME/.dccl/opt
-export C_INCLUDE_PATH=$HOME/.dccl/opt/include/
-export CPLUS_INCLUDE_PATH=$HOME/.dccl/opt/include/
-export LIBRARY_PATH=$HOME/.dccl/opt/lib/:$HOME/.dccl/opt/lib64/
-export LD_LIBRARY_PATH=$HOME/.dccl/opt/lib/:$HOME/.dccl/opt/lib64/
-cat build.sh | sed 's/\/usr\/local/$HOME\/\.dccl\/opt/g' > my_build.sh
+scripts/prerequisites/install-mutils.sh ${PREFIX}/opt
+scripts/prerequisites/install-mutils-containers.sh ${PREFIX}/opt
+scripts/prerequisites/install-libfabric.sh ${PREFIX}/opt
+scripts/prerequisites/install-json.sh ${PREFIX}/opt
+export CMAKE_PREFIX_PATH=${PREFIX}/opt
+export C_INCLUDE_PATH=${PREFIX}/opt/include/
+export CPLUS_INCLUDE_PATH=${PREFIX}/opt/include/
+export LIBRARY_PATH=${PREFIX}/opt/lib/:${PREFIX}/opt/lib64/
+export LD_LIBRARY_PATH=${PREFIX}/opt/lib/:${PREFIX}/opt/lib64/
+echo "#!/usr/bin/env bash" >> my_build.sh
+echo "source ../common_env.sh" >> my_build.sh
+cat build.sh | sed 's/\/usr\/local/$HOME\/${BENCHMARK_WORKSPACE}\/opt/g' >> my_build.sh
 chmod +x my_build.sh
 ./my_build.sh Release
 cd build-Release
@@ -52,7 +56,7 @@ git clone git@github.com:derecho-project/dccl.git
 cd dccl
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.dccl/opt ..
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX}/opt ..
 make -j `nproc`
 make install
 cd ../..
