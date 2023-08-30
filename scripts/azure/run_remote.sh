@@ -23,7 +23,7 @@ do
     # run dccl
     for alg in ring rabenseifner
     do
-        for n in `cat nodes.public.list`
+        for n in `cat nodes.public.list.cur`
         do
             ssh -oStrictHostKeyChecking=no ${n} "cd ${BENCHMARK_WORKSPACE};./run_dccl.sh ${COUNT} ${WARMUP_ITER} ${RUN_ITER} ${alg}" &
         done
@@ -31,7 +31,7 @@ do
     done
     
     # run ompi
-    root=`head -1 nodes.public.list`
+    root=`head -1 nodes.public.list.cur`
     for alg in ring rabenseifner
     do
         ssh -oStrictHostKeyChecking=no ${root} "cd ${BENCHMARK_WORKSPACE};./run_ompi.sh ${COUNT} ${WARMUP_ITER} ${RUN_ITER} ${alg}"
