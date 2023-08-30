@@ -28,7 +28,11 @@ numa_node=0
 ar_alg="ring"
 if [ $# -ge 4 ]; then
     ar_alg=$4
-fi    
+fi
+_count=${count}
+if [ $ar_alg == "ring" ]; then
+    _count=`expr ${count} - ${count} % \( 16 \* ${world_size} \)`
+fi
 
 # STEP 1 - generate layout.json
 cat layout.json.template \
@@ -49,7 +53,7 @@ numactl -m ${numa_node} -N ${numa_node} \
 dccl/build/src/application/dccl_cli \
     -a all_reduce \
     -t ${DATA_TYPE} \
-    -c ${count} \
+    -c ${_count} \
     -w ${warmup_iter} \
     -r ${run_iter}
 
