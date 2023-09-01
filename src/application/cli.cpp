@@ -259,16 +259,27 @@ int main(int argc, char** argv) {
     // step 2 - allocating data
     void* sendbuf = nullptr;
     void* recvbuf = nullptr;
+#define __ADDRESS_ALIGN__(ptr,align,ofst) \
+    reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(ptr)&(~((align)-1)))+(ofst))
+#ifndef ENFORCE_BUFFER_OFFSET
+#define ENFORCE_BUFFER_OFFSET (0)
+#endif
 #ifdef __BUILD_FOR_OMPI__
     int data_size;
+    void* ompi_sendbuf = nullptr;
+    void* ompi_recvbuf = nullptr;
     MPI_Type_size(data_type,&data_size);
-    if ((MPI_Alloc_mem(data_count*data_size,MPI_INFO_NULL,&sendbuf) != MPI_SUCCESS) ||
-        (MPI_Alloc_mem(data_count*data_size,MPI_INFO_NULL,&recvbuf) != MPI_SUCCESS)) {
-        std::cerr << "Failed to allocate " << data_count*data_size << " bytes" << std::endl;
+    if ((MPI_Alloc_mem(data_count*data_size + (CACHELINE_SIZE<<1),MPI_INFO_NULL,&ompi_sendbuf) != MPI_SUCCESS) ||
+        (MPI_Alloc_mem(data_count*data_size + (CACHELINE_SIZE<<1),MPI_INFO_NULL,&ompi_recvbuf) != MPI_SUCCESS)) {
+        std::cerr << "Failed to allocate " << (data_count*data_size + (CACHELINE_SIZE<<1)) << " bytes" << std::endl;
         std::cerr << "Error: " << std::strerror(errno) << std::endl;
         MPI_Finalize();
         return 1;
     }
+    sendbuf = __ADDRESS_ALIGN__(reinterpret_cast<uintptr_t>(ompi_sendbuf)+CACHELINE_SIZE,
+                                CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
+    recvbuf = __ADDRESS_ALIGN__(reinterpret_cast<uintptr_t>(ompi_recvbuf)+CACHELINE_SIZE,
+                                CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
 #ifdef __USE_OMPI_WIN__
     MPI_Win s_win,r_win;
     if (MPI_Win_create(sendbuf,data_count*data_size,data_size,MPI_INFO_NULL,MPI_COMM_WORLD,&s_win)) {
@@ -284,13 +295,17 @@ int main(int argc, char** argv) {
 #endif//__USE_OMPI_WIN__
 #else
     size_t data_size = size_of_type(data_type);
-    if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*data_size) ||
-        posix_memalign(&recvbuf,CACHELINE_SIZE,data_count*data_size)) {
-        std::cerr << "Failed to allocate " << data_count*data_size << " bytes" << std::endl;
+    void* dccl_sendbuf = nullptr;
+    void* dccl_recvbuf = nullptr;
+    if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
+        posix_memalign(&recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
+        std::cerr << "Failed to allocate " << (data_count*data_size + CACHELINE_SIZE) << " bytes" << std::endl;
         std::cerr << "Error:" << std::strerror(errno) << std::endl;
         ncclCommFinalize(comm);
         return 1;
     }
+    sendbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_sendbuf) + ENFORCE_BUFFER_OFFSET);
+    recvbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_recvbuf) + ENFORCE_BUFFER_OFFSET);
 #endif//__BUILD_FOR_OMPI__
     // initialize sendbuf and recvbuf
     memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
@@ -381,8 +396,8 @@ int main(int argc, char** argv) {
     MPI_Win_free(&r_win);
 #endif//__USE_OMPI_WIN__
     // free data
-    MPI_Free_mem(sendbuf);
-    MPI_Free_mem(recvbuf);
+    MPI_Free_mem(ompi_sendbuf);
+    MPI_Free_mem(ompi_recvbuf);
 #else
     // deregister memory data
     if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
@@ -393,8 +408,8 @@ int main(int argc, char** argv) {
     }
 
     // free data
-    free(sendbuf);
-    free(recvbuf);
+    free(dccl_sendbuf);
+    free(dccl_recvbuf);
 #endif//__BUILD_FOR_OMPI__
 
     // step 5 -flush timestmap
