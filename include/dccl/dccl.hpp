@@ -10,18 +10,28 @@
 
 /**
  * @file    dccl.hpp
- * @brief   Derecho Collective Communication Library (DCCL) API
+ * @brief   Derecho Collective Communications Library (DCCL) API
  * @see     dccl
  *
  * This file contains the declaration of the Derecho Collective Communication Library (DCCL) API. Similar to 
  * [RCCL](https://rccl.readthedocs.io/en/develop/api.html), DCCL is compatible to 
  * [NCCL](https://docs.nvidia.com/deeplearning/nccl/archives/nccl_296/user-guide/docs/api.html).
  * We put all DCCL API to the `dccl` namespace. 
+ *
  */
 
+/**
+ * @brief option key in derecho.cfg
+ */
 #define DCCL_ALLREDUCE_ALGORITHM_CONFSTR    "DCCL/allreduce_algorithm"
+/**
+ * @brief option value in derecho.cfg
+ */
 #define DCCL_ALLREDUCE_RING                 "ring"
-#define DCCL_ALLREDUCE_RABINSEIFNER         "rabinseifner"
+/**
+ * @brief option value in derecho.cfg
+ */
+#define DCCL_ALLREDUCE_RABENSEIFNER         "rabenseifner"
 
 /**
  * @brief DCCL namespace contains all API declaration and definition.
@@ -206,6 +216,143 @@ ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
  */
 ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
     size_t recvcount, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
+
+/**
+ * @brief Broadcast API
+ *
+ * This API is compatible to NVIDIA's NCCL:
+ * " Copies count values from root to all other devices.
+ *   root is the rank (not the CUDA device) where data resides before the
+ *   operation is started.
+ *
+ *   In-place operation will happen if sendbuff == recvbuff. "
+ *
+ * IMPORTANT: We assume that calls to broadcast arrive in the same order on all nodes.
+ * IMPORTANT: Although our inner implementation can be non-blocking: a call to broadcast returns a uint64_t bcast_id,
+ *            which can be used to query the state of broadcast later, we didn't do it yet. Why? let's say we have 
+ *            two nodes in the system A and B. Both A and B calls the following broadcast in the same order:
+ *            -# bid1 = nb_broadcast(...,root=A,...);
+ *            -# bid2 = nb_broadcast(...,root=B,...);
+ *            -# wait_for(bid1);
+ *            -# wait_for(bid2);
+ *            There is no guarantee that node A will broadcast earlier than node B without a causality between A and B.
+ *            However, a series of broadcasts sent by a same thread can leverage the non-blocking mechanism because the
+ *            sending thread introduce causality. Due to the above complexity, we decide to only expose blocking API so
+ *            far.
+ * IMPORTANT: Due to the current Derecho design, we DO need copy data on send and receive. This is going to be solved
+ *            in our real-zerocopy design.
+ *
+ * @param[in]   sendbuff    The buffer containing local data to be sent.
+ * @param[out]  recvbuff    The buffer to receive the data.
+ * @param[in]   count       The number of entries in the receive buffer.
+ * @param[in]   datatype    The type of the data.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
+    ncclDataType_t datatype, int root, ncclComm_t comm);
+
+/**
+ * @brief Bcast API
+ *
+ * This API is compatible to NVIDIA's NCCL
+ *
+ * @param[in/out]   buff    The buffer to receive the data.
+ * @param[in]   count       The number of entries in the receive buffer.
+ * @param[in]   datatype    The type of the data.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclBcast(void* buff, size_t count,
+    ncclDataType_t datatype, int root, ncclComm_t comm);
+
+/**
+ * @brief Reduce API
+ *
+ * This API is compatible to NVIDIA's NCCL:
+ * " Reduces data arrays of length count in sendbuff into recvbuff using op
+ *   operation.
+ *   recvbuff may be NULL on all calls except for root device.
+ *   root is the rank (not the CUDA device) where data will reside after the
+ *   operation is complete.
+ *
+ *   In-place operation will happen if sendbuff == recvbuff."
+ *
+ * @param[in]   sendbuff    The buffer containing local data to reduce.
+ * @param[out]  recvbuff    The buffer receiving reduced data.
+ * @param[in]   count       The number of entries in the receive buffer.
+ * @param[in]   datatype    The type of the data.
+ * @param[in]   op          The reduce operation to be performed.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
+    ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm);
+
+/**
+ * @brief AllGather API
+ *
+ * This API is compatible to NVIDIA's NCCL:
+ * " Each device gathers sendcount values from other GPUs into recvbuff,
+ *   receiving data from rank i at offset i*sendcount.
+ *   Assumes recvcount is equal to nranks*sendcount, which means that recvbuff
+ *   should have a size of at least nranks*sendcount elements.
+ *
+ *   In-place operations will happen if sendbuff == recvbuff + rank * sendcount."
+ *
+ * @param[in]   sendbuff        The buffer containing the local data to gather.
+ * @param[out]  recvbuff        The buffer receiving gathered data.
+ * @param[in]   sendcount       The number of data entries in the send buffer.
+ * @param[in]   datatype        The type of the data.
+ * @param[in]   comm        The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
+    ncclDataType_t datatype, ncclComm_t comm);
+
+/**
+ * @brief Point-to-Point send
+ *
+ * @param[in]   sendbuff        The buffer containing the local data to send.
+ * @param[in]   count           The number of data entries in the send buffer.
+ * @param[in]   datatype        The type of the data.
+ * @param[in]   peer            The rank of the receiver.
+ * @param[in]   comm            The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype,
+    int peer, ncclComm_t comm);
+
+/**
+ * @brief Point-to-Point recv
+ *
+ * @param[in]   recvbuff        The buffer receiving the data from peer.
+ * @param[in]   count           The number of data entries in the buffer.
+ * @param[in]   datatype        The type of the data.
+ * @param[in]   peer            The rank of the receiver.
+ * @param[in]   comm            The DCCL communication object.
+ *
+ * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
+ *
+ * @return      Error code
+ */
+ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
+    ncclComm_t comm);
 
 /**
  * @}

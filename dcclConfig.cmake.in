@@ -1,0 +1,7 @@
+@PACKAGE_INIT@
+
+set_and_check(dccl_INCLUDE_DIRS "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set(dccl_LIBRARIES "-L@PACKAGE_CMAKE_INSTALL_LIBDIR@ -ldccl")
+include("@PACKAGE_ConfigPackageLocation@/dcclTargets.cmake")
+
+check_required_components(dccl)

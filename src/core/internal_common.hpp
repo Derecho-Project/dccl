@@ -11,6 +11,8 @@
 #include <derecho/core/derecho.hpp>
 #include <dccl/dccl.hpp>
 #include "blob.hpp"
+#include <mutex>
+#include <condition_variable>
 
 using namespace derecho;
 
@@ -111,7 +113,8 @@ public:
  *
  * We put it in source to hide it from DCCL applications.
  */
-struct dcclComm {
+class dcclComm {
+public:
     /**
      * @brief   Pointer to the derecho group
      */
@@ -120,6 +123,117 @@ struct dcclComm {
      * @brief   Pointer to the `DCCLSubgroupType` object living in Derecho.
      */
     void* derecho_group_object;
+
+    /**
+     * @brief   broadcast delivery states.
+     */
+    typedef enum {
+        nonexist,
+        undelivered,
+        delivered,
+        failed,
+    } bcast_delivery_state_t;
+private:
+    /**
+     * @brief   broadcast queue mutex
+     *
+     * Broadcast queue is used for coordination between the broadcast sender and receiver. The caller of 
+     * `ncclBroadcast` or `ncclBcast` register the receiving buffer to the broadcast buffer map so that, once
+     * a message is recieved (by derecho predicate thread), the data will be moved to the receiving buffer.
+     *
+     * If the data arrives earlier, the predicate thread will wait on the broadcast buffer map before 
+     * buffer is received.
+     *
+     * TODO: this mechanism should be improved in the following ways
+     * 1) We should use lockless design to avoid blocking the predicate thread.
+     * 2) Update the SST/RDMA design for real zero-copy. Currently, we HAVE TO COPY because the internal derecho
+     *    buffers are not usable for application. And this introduces overhead!!!
+     */
+    std::mutex                          broadcast_queue_mutex;
+    /**
+     * @brief   delivery state mutex
+     */
+    std::mutex                          delivery_state_mutex;
+    /**
+     * @brief   broadcast queue condition variable
+     */
+    std::condition_variable             broadcast_queue_cv;
+    /**
+     * @brief   delivery state condition variable
+     */
+    std::condition_variable             delivery_state_cv;
+    /**
+     * @brief   broadcast queue
+     * a queue of 3-tuple (broadcast_id,buffer ptr,buffer size).
+     */
+    std::queue<std::tuple<uint64_t,void*,size_t>>   broadcast_queue;
+    /**
+     * @brief   broadcast id generator
+     */
+    uint64_t    bcast_id_seed;
+
+    /**
+     * @brief   broadcast delivery state table
+     * The delivery state table is a map from broadcast_id to its delivery state.
+     */
+    std::unordered_map<uint64_t,bcast_delivery_state_t>               delivery_state;
+
+public:
+    /**
+     * Constructor
+     */
+    dcclComm();
+    /**
+     * Destructor
+     */
+    virtual ~dcclComm();
+
+    /**
+     * @brief post broadcast receive buffer
+     * This function is only called by ncclBroadcast/ncclBcast to pose a receiving buffer.
+     *
+     * @param[in]   recvbuff        pointer to the receive buffer
+     * @param[in]   len             length of the receive buffer
+     * 
+     * @return      broadcast id    a token for retrieving the received buffer later.
+     */
+    uint64_t post_bcast_recv_buff(void* recvbuff,size_t len);
+    /**
+     * @brief handle a broadcast receiving
+     *
+     * @param[in]   data_generator  An r-value reference to a lambda to fill the buffer for the broadcast.
+     *                              The parameters to the lambda are pointer/size. It returns false on error.
+     */
+    void on_bcast(const std::function<bool(void*,const size_t&)>& data_generator);
+    /**
+     * @brief query the state of a bcast.
+     *
+     * This query will return immediately reporting the broadcast's current state.
+     * 
+     * @param[in]   bcast_id        A value representing the broadcast state
+     *
+     * @return      state of the corresponding broadcast
+     */
+    bcast_delivery_state_t query_bcast(const uint64_t& bcast_id);
+    /**
+     * @brief blockingly query the state of a broadcast.
+     *
+     * The query will wait until the corresponding broadcast is not in `undelivered` state.
+     *
+     * @param[in]   bcast_id        A value representing the broadcast state
+     *
+     * @return      state of the corresponding broadcast
+     */
+    bcast_delivery_state_t wait_bcast(const uint64_t& bcast_id);
+    /**
+     * @brief clear the broadcast id from delivery table
+     * IMPORTANT: If bcast_id in undelivered state, it will not be removed.
+     *
+     * @param[in]   bcast_id        A value representing the broadcast state
+     *
+     * @return      removed state of the corresponding broadcast id. 
+     */
+    bcast_delivery_state_t clear_bcast(const uint64_t& bcast_id);
 };
 
 /**

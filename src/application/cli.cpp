@@ -15,7 +15,11 @@ using namespace dccl;
 
 const char* help_string = 
     "\t--api,-a     name of the DCCL api to be tested. This option is mandatory. Full api list:\n"
-    "\t             scatter,gather,broadcast,send,recv,reduce,all_reduce,reduce_scatter,all_gather\n"
+    "\t             broadcast,send,recv,reduce,all_reduce,reduce_scatter,all_gather\n"
+    "\t             Please note that\n"
+    "\t             - 'send' and 'recv' only work between rank 0 and 1. \n"
+    "\t             - only rank 0 will 'broadcast', all other node will receive. \n"
+    "\t             - 'reduce' will reduce to rank 0.\n"
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
     "\t--repeat,-r  number of operations for evaluation, defaulted to 1000.\n"
     "\t--type,-t    type of the data, defaulted to uint32. Full type list:\n"
@@ -227,6 +231,7 @@ int main(int argc, char** argv) {
 #else
     ncclResult_t ret;
     uint32_t my_rank;
+    uint32_t world_size;
     ncclComm_t comm;
 #endif//__BUILD_FOR_OMPI__
 
@@ -249,21 +254,31 @@ int main(int argc, char** argv) {
         return ret;
     }
     my_rank = dcclGetMyRank(comm);
+    world_size = dcclGetWorldSize(comm);
 #endif//__BUILD_FOR_OMPI__
 
     // step 2 - allocating data
     void* sendbuf = nullptr;
     void* recvbuf = nullptr;
+#define __ADDRESS_ALIGN__(ptr,align,ofst) \
+    reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(ptr)&(~((align)-1)))+(ofst))
+#define ENFORCE_BUFFER_OFFSET (0)
 #ifdef __BUILD_FOR_OMPI__
     int data_size;
+    void* ompi_sendbuf = nullptr;
+    void* ompi_recvbuf = nullptr;
     MPI_Type_size(data_type,&data_size);
-    if ((MPI_Alloc_mem(data_count*data_size,MPI_INFO_NULL,&sendbuf) != MPI_SUCCESS) ||
-        (MPI_Alloc_mem(data_count*data_size,MPI_INFO_NULL,&recvbuf) != MPI_SUCCESS)) {
-        std::cerr << "Failed to allocate " << data_count*data_size << " bytes" << std::endl;
+    if ((MPI_Alloc_mem(data_count*data_size + (CACHELINE_SIZE<<1),MPI_INFO_NULL,&ompi_sendbuf) != MPI_SUCCESS) ||
+        (MPI_Alloc_mem(data_count*data_size + (CACHELINE_SIZE<<1),MPI_INFO_NULL,&ompi_recvbuf) != MPI_SUCCESS)) {
+        std::cerr << "Failed to allocate " << (data_count*data_size + (CACHELINE_SIZE<<1)) << " bytes" << std::endl;
         std::cerr << "Error: " << std::strerror(errno) << std::endl;
         MPI_Finalize();
         return 1;
     }
+    sendbuf = __ADDRESS_ALIGN__(reinterpret_cast<uintptr_t>(ompi_sendbuf)+CACHELINE_SIZE,
+                                CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
+    recvbuf = __ADDRESS_ALIGN__(reinterpret_cast<uintptr_t>(ompi_recvbuf)+CACHELINE_SIZE,
+                                CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
 #ifdef __USE_OMPI_WIN__
     MPI_Win s_win,r_win;
     if (MPI_Win_create(sendbuf,data_count*data_size,data_size,MPI_INFO_NULL,MPI_COMM_WORLD,&s_win)) {
@@ -281,18 +296,23 @@ int main(int argc, char** argv) {
 #endif//__USE_OMPI_WIN__
 #else
     size_t data_size = size_of_type(data_type);
-    if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*data_size) ||
-        posix_memalign(&recvbuf,CACHELINE_SIZE,data_count*data_size)) {
-        std::cerr << "Failed to allocate " << data_count*data_size << " bytes" << std::endl;
+    void* dccl_sendbuf = nullptr;
+    void* dccl_recvbuf = nullptr;
+    if (posix_memalign(&dccl_sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
+        posix_memalign(&dccl_recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
+        std::cerr << "Failed to allocate " << (data_count*data_size + CACHELINE_SIZE) << " bytes" << std::endl;
         std::cerr << "Error:" << std::strerror(errno) << std::endl;
         ncclCommFinalize(comm);
         return 1;
     }
+    sendbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_sendbuf) + ENFORCE_BUFFER_OFFSET);
+    recvbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_recvbuf) + ENFORCE_BUFFER_OFFSET);
 #endif//__BUILD_FOR_OMPI__
-    // initialize each byte of sendbuf to 1
-    memset(sendbuf,1,data_count*data_size);
-    // zero recvbuf
-    bzero(recvbuf,data_count*data_size);
+    std::cout << "sendbuf@" << sendbuf << std::endl;
+    std::cout << "recvbuf@" << recvbuf << std::endl;
+    // initialize sendbuf and recvbuf
+    memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
+    memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
 #ifdef __BUILD_FOR_OMPI__
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
@@ -315,7 +335,25 @@ int main(int argc, char** argv) {
         if (api == "all_reduce") { \
             ret = ncclAllReduce(sendbuf,sendbuf,data_count,data_type,operation,comm); \
         } else if (api == "reduce_scatter") { \
-            ret = ncclReduceScatter(sendbuf,recvbuf,data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
+            ret = ncclReduceScatter(sendbuf, \
+                                    reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
+                                    data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
+        } else if (api == "all_gather") { \
+            ret = ncclAllGather(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
+                                sendbuf, \
+                                data_count/dcclGetWorldSize(comm),data_type,comm); \
+        } else if (api == "reduce") { \
+            ret = ncclReduce(sendbuf,sendbuf,data_count,data_type,operation,0,comm); \
+        } else if (api == "broadcast") { \
+            ret = ncclBroadcast(sendbuf,recvbuf,data_count, data_type, 0, comm); \
+        } else if (api == "send") { \
+            if (my_rank < 2) { \
+                ret = ncclSend(sendbuf,data_count,data_type,1 - my_rank,comm); \
+            } \
+        } else if (api == "recv") { \
+            if (my_rank < 2) { \
+                ret = ncclRecv(sendbuf,data_count,data_type,1 - my_rank, comm); \
+            } \
         } else { \
             ret = ncclInvalidArgument; \
         } \
@@ -361,8 +399,8 @@ int main(int argc, char** argv) {
     MPI_Win_free(&r_win);
 #endif//__USE_OMPI_WIN__
     // free data
-    MPI_Free_mem(sendbuf);
-    MPI_Free_mem(recvbuf);
+    MPI_Free_mem(ompi_sendbuf);
+    MPI_Free_mem(ompi_recvbuf);
 #else
     // deregister memory data
     if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
@@ -373,8 +411,8 @@ int main(int argc, char** argv) {
     }
 
     // free data
-    free(sendbuf);
-    free(recvbuf);
+    free(dccl_sendbuf);
+    free(dccl_recvbuf);
 #endif//__BUILD_FOR_OMPI__
 
     // step 5 -flush timestmap
