@@ -261,9 +261,7 @@ int main(int argc, char** argv) {
     void* recvbuf = nullptr;
 #define __ADDRESS_ALIGN__(ptr,align,ofst) \
     reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(ptr)&(~((align)-1)))+(ofst))
-#ifndef ENFORCE_BUFFER_OFFSET
 #define ENFORCE_BUFFER_OFFSET (0)
-#endif
 #ifdef __BUILD_FOR_OMPI__
     int data_size;
     void* ompi_sendbuf = nullptr;
@@ -297,8 +295,8 @@ int main(int argc, char** argv) {
     size_t data_size = size_of_type(data_type);
     void* dccl_sendbuf = nullptr;
     void* dccl_recvbuf = nullptr;
-    if (posix_memalign(&sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
-        posix_memalign(&recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
+    if (posix_memalign(&dccl_sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
+        posix_memalign(&dccl_recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
         std::cerr << "Failed to allocate " << (data_count*data_size + CACHELINE_SIZE) << " bytes" << std::endl;
         std::cerr << "Error:" << std::strerror(errno) << std::endl;
         ncclCommFinalize(comm);
