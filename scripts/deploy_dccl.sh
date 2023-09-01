@@ -15,12 +15,12 @@ make install
 cd ..
 
 # 1 - install derecho
+sudo apt install libspdlog-dev libssl-dev libtool librdmacm-dev libibverbs-dev -y
 git clone https://github.com/derecho-project/derecho.git
 cd derecho
 git checkout oob
 scripts/prerequisites/install-mutils.sh $HOME/.dccl/opt
 scripts/prerequisites/install-mutils-containers.sh $HOME/.dccl/opt
-scripts/prerequisites/install-mutils-tasks.sh $HOME/.dccl/opt
 scripts/prerequisites/install-libfabric.sh $HOME/.dccl/opt
 scripts/prerequisites/install-json.sh $HOME/.dccl/opt
 export CMAKE_PREFIX_PATH=$HOME/.dccl/opt
@@ -38,10 +38,10 @@ cd ../..
 # 2 - install dccl
 git clone git@github.com:derecho-project/dccl.git
 cd dccl
-git checkout ompi
+git checkout main
 mkdir build-${target}
 cd build-${target}
-cmake -DCMAKE_BUILD_TYPE=${target} -DCMAKE_INSTALL_PREFIX=$HOME/.dccl/opt ..
+cmake -DOMPI_WINDOW=on -DCMAKE_BUILD_TYPE=${target} -DCMAKE_INSTALL_PREFIX=$HOME/.dccl/opt ..
 make -j `nproc`
 # make install
 cd ../..
