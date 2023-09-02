@@ -41,17 +41,25 @@ ncclResult_t all_gather_ring(
 
     // STEP 3 ring all gather
     for (uint32_t s=0;s<world_size-1;s++) {
-        // 3.1 send dat[r-s+1] to rank r+1
+        // 3.1 recv dat[r-s] from rank r-1
+        uint32_t r_chunks = dccl_oob_recv(comm,from_id,__DATA__(my_rank - s - 1),data_slot_size);
+        // 3.2 send dat[r-s+1] to rank r+1
+        uint32_t s_chunks = dccl_oob_send(comm,to_id,__DATA__(my_rank - s),data_slot_size);
+        // 3.3 blocking wait
+        dccl_oob_wait_for_recv(comm,from_id,r_chunks);
+        dccl_oob_wait_for_send(comm,to_id,s_chunks);
+
+        /*****
         struct iovec siov,riov;
         siov.iov_base   = __DATA__(my_rank - s);
         siov.iov_len    = data_slot_size;
-        // 3.2 recv dat[r-s] from rank r-1
         riov.iov_base   = __DATA__(my_rank - s -1);
         riov.iov_len    = data_slot_size;
         SUBGROUP_HANDLE(comm).oob_recv(from_id,&riov,1);
         SUBGROUP_HANDLE(comm).oob_send(to_id,&siov,1);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(from_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(to_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
+        *****/
     }
 
     dccl_trace("{}: ring allgather done.", __func__);

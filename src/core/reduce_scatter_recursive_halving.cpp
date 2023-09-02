@@ -74,6 +74,12 @@ ncclResult_t reduce_scatter_recursive_halving(
         dccl_trace("step-{}, me{}:id-{} <--> peer{}:id-{}, data size = {} Bytes, recv_buffer = {:p}, send_buffer = {:p}",
                    step, my_rank, shard_members.at(to_old_rank(my_rank)), 
                    peer_rank, peer_id, step_bsize, recv_buffer, send_buffer);
+        uint32_t s_chunks = dccl_oob_send(comm,peer_id,send_buffer,step_bsize);
+        uint32_t r_chunks = dccl_oob_recv(comm,peer_id,scratchpad,step_bsize);
+        dccl_oob_wait_for_send(comm,peer_id,s_chunks);
+        dccl_oob_wait_for_recv(comm,peer_id,r_chunks);
+
+        /*****
         struct iovec siov,riov;
         siov.iov_base   = send_buffer;
         siov.iov_len    = step_bsize;
@@ -83,6 +89,7 @@ ncclResult_t reduce_scatter_recursive_halving(
         SUBGROUP_HANDLE(comm).oob_recv(shard_members.at(to_old_rank(peer_rank)),&riov,1);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
+        *****/
         // TODO: optimization opportunities here: we can wait OOB_OP_RECV first and then do reduce. But currently, 
         // the wait_for_oob_op needs improved to distinguish OOB_OP_RECV and OOB_OP_SEND.
 

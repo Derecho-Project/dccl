@@ -67,6 +67,11 @@ ncclResult_t all_gather_recursive_doubling (
         /**
          * @endcond
          */
+        uint32_t s_chunks = dccl_oob_send(comm,peer_id,BLOCK_ID_TO_BUF_ADDR(send_block),step_bsize);
+        uint32_t r_chunks = dccl_oob_recv(comm,peer_id,BLOCK_ID_TO_BUF_ADDR(recv_block),step_bsize);
+        dccl_oob_wait_for_send(comm,peer_id,s_chunks);
+        dccl_oob_wait_for_recv(comm,peer_id,r_chunks);
+        /*****
         struct iovec siov,riov;
         siov.iov_base   = BLOCK_ID_TO_BUF_ADDR(send_block);
         siov.iov_len    = step_bsize;
@@ -77,6 +82,7 @@ ncclResult_t all_gather_recursive_doubling (
         SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
         step_bsize = (step_bsize<<1);
+        *****/
     }
 
     dccl_trace("{}: Finished.", __func__);

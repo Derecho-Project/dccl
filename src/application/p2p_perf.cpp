@@ -17,6 +17,9 @@ using namespace dccl;
 #define TT_OOB_SEND             TT_OOB(1001)
 #define TT_OOB_ACKD             TT_OOB(1002)
 
+/**
+ * @cond    DoxygenSuppressed
+ */
 class P2PPerfSubgroupType : public mutils::ByteRepresentable,
                             public GroupReference {
 private:
@@ -279,3 +282,6 @@ int main(int argc, char** argv) {
 
     return ret;
 }
+/**
+ * @endcond
+ */

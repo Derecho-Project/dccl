@@ -494,28 +494,43 @@ ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
 
     // STEP 4: collect data.
     if (iamroot) {
+        uint32_t r_chunks_arr[world_size];
         for (uint32_t r = 0; r < world_size; r++) {
             if (r == my_rank) {
                 continue;
             }
+            r_chunks_arr[r] = dccl_oob_recv(comm,shard_members.at(r),
+                    reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(rbuf) + slot_size * r),
+                    slot_size);
+            /*****
             struct iovec riov;
             riov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(rbuf) + slot_size * r);
             riov.iov_len    = slot_size;
             SUBGROUP_HANDLE(comm).oob_recv(shard_members.at(r),&riov,1);
+            *****/
         }
 
         for (uint32_t r = 0; r < world_size; r++) {
             if (r == my_rank) {
                 continue;
             }
+            dccl_oob_wait_for_recv(comm,shard_members.at(r),r_chunks_arr[r]);
+            /*****
             SUBGROUP_HANDLE(comm).wait_for_oob_op(shard_members.at(r),OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
+            *****/
         }
     } else {
+        uint32_t s_chunks = dccl_oob_send(comm,shard_members.at(root),
+                reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(rbuf) + slot_size * my_rank),
+                slot_size);
+        dccl_oob_wait_for_send(comm,shard_members.at(root),s_chunks);
+        /*****
         struct iovec siov;
         siov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(rbuf) + slot_size * my_rank);
         siov.iov_len    = slot_size;
         SUBGROUP_HANDLE(comm).oob_send(shard_members.at(root),&siov,1);
         SUBGROUP_HANDLE(comm).wait_for_oob_op(shard_members.at(root),OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
+        *****/
     }
 
     return ret;
@@ -549,11 +564,15 @@ ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatyp
     }
 
     node_id_t peer_id = get_dccl_shard_members(comm).at(peer);
+    uint32_t s_chunks = dccl_oob_send(comm,peer_id,const_cast<void*>(sendbuff),count*size_of_type(datatype));
+    dccl_oob_wait_for_send(comm,peer_id,s_chunks);
+    /*****
     struct iovec siov;
     siov.iov_base = const_cast<void*>(sendbuff);
     siov.iov_len  = count*size_of_type(datatype);
     SUBGROUP_HANDLE(comm).oob_send(peer_id,&siov,1);
     SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
+    *****/
 
     return ncclSuccess;
 }
@@ -569,11 +588,15 @@ ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int
     }
 
     node_id_t peer_id = get_dccl_shard_members(comm).at(peer);
+    uint32_t r_chunks = dccl_oob_recv(comm,peer_id,recvbuff,count*size_of_type(datatype));
+    dccl_oob_wait_for_recv(comm,peer_id,r_chunks);
+    /*****
     struct iovec riov;
     riov.iov_base = recvbuff;
     riov.iov_len  = count*size_of_type(datatype);
     SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
     SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
+    *****/
 
     return ncclSuccess;
 }

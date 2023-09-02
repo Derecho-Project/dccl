@@ -246,6 +246,7 @@ ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
  * @param[out]  recvbuff    The buffer to receive the data.
  * @param[in]   count       The number of entries in the receive buffer.
  * @param[in]   datatype    The type of the data.
+ * @param[in]   root        The rank of the root node.
  * @param[in]   comm        The DCCL communication object.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
@@ -260,9 +261,10 @@ ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
  *
  * This API is compatible to NVIDIA's NCCL
  *
- * @param[in/out]   buff    The buffer to receive the data.
+ * @param[in,out]   buff    The buffer to receive the data.
  * @param[in]   count       The number of entries in the receive buffer.
  * @param[in]   datatype    The type of the data.
+ * @param[in]   root        The rank of the root node.
  * @param[in]   comm        The DCCL communication object.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
@@ -289,6 +291,7 @@ ncclResult_t ncclBcast(void* buff, size_t count,
  * @param[in]   count       The number of entries in the receive buffer.
  * @param[in]   datatype    The type of the data.
  * @param[in]   op          The reduce operation to be performed.
+ * @param[in]   root        The rank of the root node.
  * @param[in]   comm        The DCCL communication object.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.

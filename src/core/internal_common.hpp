@@ -540,4 +540,105 @@ ncclResult_t do_reduce(const void*  sendbuf,
     }
     return ncclSuccess;
 }
+
+/**
+ * @brief max message size
+ * libfabric has a limitation of 1GB, we use 8 MB here.
+ */
+#define DCCL_OOB_MESSAGE_SIZE    (1ul<<23)
+
+/**
+ * @brief oob send/recv segmentation
+ * send/recv in `DCCL_OOB_MESSAGE_SIZE` chunks. User application should not call this directly, 
+ * use `dccl_oob_send` and `dccl_oob_recv` instead.
+ *
+ * @param[in]   comm        the DCCL communicator
+ * @param[in]   _id         peer id
+ * @param[in]   buf         pointer to send/recv buffer
+ * @param[in]   size        the total size for send/recv
+ * @param[in]   is_send     true for send, false for receive
+ *
+ * @return number of chunks.
+ */
+inline uint32_t __dccl_oob_op(ncclComm_t& comm,const node_id_t& _id,void* buf,const size_t& size,const bool is_send) {
+    size_t      leftover    = size;
+    uint32_t    count       = 0;
+
+    struct iovec iov;
+    iov.iov_base = buf;
+    while (leftover > 0) {
+        iov.iov_len     = (leftover>DCCL_OOB_MESSAGE_SIZE)?DCCL_OOB_MESSAGE_SIZE:leftover;
+        if (is_send) {
+            SUBGROUP_HANDLE(comm).oob_send(_id,&iov,1);
+        } else {
+            SUBGROUP_HANDLE(comm).oob_recv(_id,&iov,1);
+        }
+        iov.iov_base    = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(iov.iov_base) + iov.iov_len);
+        leftover        = leftover - iov.iov_len;
+        count ++;
+    }
+
+    return count;
+}
+
+/**
+ * @brief oob recv
+ * send/recv in `DCCL_OOB_MESSAGE_SIZE` chunks
+ *
+ * @param[in]   comm        the DCCL communicator
+ * @param[in]   fid         peer id
+ * @param[in]   buf         pointer to recv buffer
+ * @param[in]   size        the total size for recv
+ *
+ * @return number of chunks.
+ */
+inline uint32_t dccl_oob_recv(ncclComm_t& comm,const node_id_t& fid,void* buf,const size_t& size) {
+    return __dccl_oob_op(comm,fid,buf,size,false);
+}
+
+/**
+ * @brief oob send
+ * send/recv in `DCCL_OOB_MESSAGE_SIZE` chunks
+ *
+ * @param[in]   comm        the DCCL communicator
+ * @param[in]   tid         peer id
+ * @param[in]   buf         pointer to send buffer
+ * @param[in]   size        the total size for send
+ *
+ * @return number of chunks.
+ */
+inline uint32_t dccl_oob_send(ncclComm_t& comm,const node_id_t& tid,void* buf,const size_t& size) {
+    return __dccl_oob_op(comm,tid,buf,size,true);
+}
+
+/**
+ * @brief wait for oob send
+ *
+ * @param[in]   comm        the DCCL communicator
+ * @param[in]   tid         peer id
+ * @param[in]   num_chunks  number of chunks
+ */
+inline void dccl_oob_wait_for_send(ncclComm_t& comm, node_id_t& tid, uint32_t num_chunks) {
+    uint32_t leftover = num_chunks;
+    while(leftover) {
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(tid,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
+        leftover --;
+    }
+}
+
+/**
+ * @brief wait for oob recv
+ *
+ * @param[in]   comm        the DCCL communicator
+ * @param[in]   fid         peer id
+ * @param[in]   num_chunks  number of chunks
+ */
+inline void dccl_oob_wait_for_recv(ncclComm_t& comm, node_id_t& fid, uint32_t num_chunks) {
+    uint32_t leftover = num_chunks;
+    while(leftover) {
+        SUBGROUP_HANDLE(comm).wait_for_oob_op(fid,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
+        leftover --;
+    }
+}
+
 } // namespace dccl
