@@ -543,9 +543,11 @@ ncclResult_t do_reduce(const void*  sendbuf,
 
 /**
  * @brief max message size
- * libfabric has a limitation of 1GB, we use 8 MB here.
+ * libfabric has a limitation of 1GB,
+ * TODO: It seems the completion polling system will encounter non-deterministic error with small messages.
+ * We need to fix it later. Try 8MB message for debugging.
  */
-#define DCCL_OOB_MESSAGE_SIZE    (1ul<<23)
+#define DCCL_OOB_MESSAGE_SIZE    (1ul<<30)
 
 /**
  * @brief oob send/recv segmentation
