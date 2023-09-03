@@ -43,6 +43,7 @@ do
     for alg in ring rabenseifner
     do
         scp -oStrictHostKeyChecking=no ${root}:${BENCHMARK_WORKSPACE}/${alg}-*-c${COUNT}w${WARMUP_ITER}r${RUN_ITER}.tar.bz2 ws-${world_size}/
+        ssh -oStrictHostKeyChecking=no ${root} "rm -f ${BENCHMARK_WORKSPACE}/${alg}-*-c${COUNT}w${WARMUP_ITER}r${RUN_ITER}.tar.bz2"
     done
 
 done

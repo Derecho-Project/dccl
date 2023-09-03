@@ -48,7 +48,7 @@ mkdir ${dat}
 let r=0
 for h in `cat myhostfile`
 do
-    scp ${h}:${BENCHMARK_WORKSPACE}/ompi_cli.${r}.tt ${dat}/${h}.tt
+    scp ${h}:${BENCHMARK_WORKSPACE}/ompi_cli.${r}.tt ${dat}/r${r}.tt
     let r=$r+1
 done
 tar -jcf ${dat}.tar.bz2 ${dat}

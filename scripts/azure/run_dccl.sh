@@ -64,9 +64,11 @@ if [ ${my_id} == "0" ]; then
     dat=${ar_alg}-dccl-c${count}w${warmup_iter}r${run_iter}
     mkdir ${dat}
 
+    let r=0
     for ip in `cat nodes.private.list`
     do
-        scp -oStrictHostKeyChecking=no ${ip}:${BENCHMARK_WORKSPACE}/dccl_cli.tt ${dat}/${ip}.tt
+        scp -oStrictHostKeyChecking=no ${ip}:${BENCHMARK_WORKSPACE}/dccl_cli.tt ${dat}/r${r}.tt
+        let r=${r}+1
     done
     tar -jcf ${dat}.tar.bz2 ${dat}
     rm -rf ${dat}
