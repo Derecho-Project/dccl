@@ -57,7 +57,7 @@ find_package(OpenSSL REQUIRED)
 find_package(derecho CONFIG REQUIRED)
 
 # openmpi
-find_package(MPI REQUIRED)
+find_package(MPI)
 
 # doxygen
 find_package(Doxygen)
