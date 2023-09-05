@@ -62,6 +62,14 @@ find_package(MPI REQUIRED)
 # doxygen
 find_package(Doxygen)
 
+# cuda found
+include(CheckLanguage)
+check_language(CUDA)
+if (CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+    set( CUDA_FOUND 1 )
+endif()
+
 # Derecho exports an IMPORT target, following the "new" way of
 # doing things, but for some reason we still need to do this
 # in order for some of the sub-components of Cascade to compile.
