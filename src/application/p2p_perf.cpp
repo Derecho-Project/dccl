@@ -250,7 +250,7 @@ int main(int argc, char** argv) {
     
     while (true) {
         int option_index = 0;
-        c = getopt_long(argc,argv, "t:s:d:w:D:h", long_options, &option_index);
+        c = getopt_long(argc,argv, "t:c:s:d:w:D:h", long_options, &option_index);
 
         if (c == -1) {
             break;
@@ -261,9 +261,9 @@ int main(int argc, char** argv) {
             transport = optarg;
             break;
 #ifdef	CUDA_FOUND
-	case 'c':
-	    cuda_dev = std::stol(optarg);
-	    break;
+	    case 'c':
+	        cuda_dev = std::stol(optarg);
+	        break;
 #endif
         case 's':
             size_byte = std::stol(optarg);
