@@ -4,6 +4,10 @@
 #include <derecho/utils/time.h>
 #include <dccl/dccl.hpp>
 
+#ifdef CUDA_FOUND
+#include <cuda.h>
+#endif
+
 using namespace derecho;
 using namespace dccl;
 
@@ -60,7 +64,7 @@ static int oob_perf(
     void*  pool_ptr;
 #ifdef	CUDA_FOUND
     if (cuda_dev >= 0) {
-	    int rc = cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&pool_tr),pool_size);
+	    int rc = cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&pool_ptr),pool_size);
         if ( rc != CUDA_SUCCESS ) {
             std::cerr << "Failed to allocate cuda memory. cuMemAlloc() returns " << rc << std::endl;
             return -1;

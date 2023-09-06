@@ -55,5 +55,9 @@ target_include_directories(p2p_perf PRIVATE
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
-target_link_libraries(p2p_perf dccl derecho)
+if (CMAKE_CUDA_COMPILER)
+    target_link_libraries(p2p_perf dccl derecho cuda CUDA::cudart)
+else()
+    target_link_libraries(p2p_perf dccl derecho)
+endif()
 add_dependencies(p2p_perf dccl)

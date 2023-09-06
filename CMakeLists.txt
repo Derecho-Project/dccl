@@ -67,6 +67,7 @@ include(CheckLanguage)
 check_language(CUDA)
 if (CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
+    find_package(CUDAToolkit)
     set( CUDA_FOUND 1 )
 endif()
 
