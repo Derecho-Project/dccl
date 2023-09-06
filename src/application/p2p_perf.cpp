@@ -36,7 +36,11 @@ public:
     void ensure_registerd(mutils::DeserializationManager&) {}
 };
 
-static int oob_perf(size_t      size_byte,
+static int oob_perf(
+#ifdef CUDA_FOUND
+                    int32_t 	cuda_dev,
+#endif
+		    size_t      size_byte,
                     size_t      depth,
                     uint32_t    warmup_sec,
                     uint32_t    duration_sec) {
@@ -54,6 +58,15 @@ static int oob_perf(size_t      size_byte,
     // STEP 2: prepare memory pool
     size_t pool_size    = (size_byte*depth + 4095)/4096*4096;
     void*  pool_ptr;
+#ifdef	CUDA_FOUND
+    if (cuda_dev >= 0) {
+	    int rc = cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&pool_tr),pool_size);
+        if ( rc != CUDA_SUCCESS ) {
+            std::cerr << "Failed to allocate cuda memory. cuMemAlloc() returns " << rc << std::endl;
+            return -1;
+        }
+    } else
+#endif
     if (posix_memalign(&pool_ptr,4096,pool_size)) {
         std::cerr << "Failed to allocate memory:" << strerror(errno) << std::endl;
         return -1;
@@ -191,6 +204,9 @@ static int oob_perf(size_t      size_byte,
 const char* help_string = 
     "\t--transport,-t       name of the p2p transport driver. This option is mandatory.\n"
     "\t                     Transport choices: ucx,oob\n"
+#ifdef	CUDA_FOUND
+    "\t--cuda,-c            using gpu memory on specified cuda device.\n"
+#endif
     "\t--size,-s            message size in bytes, default to 1024 bytes.\n"
     "\t--depth,-d           window deption, default to 16.\n"
     "\t--warmup,-w          duration of the warming up in seconds, default to one second.\n"
@@ -206,6 +222,9 @@ int main(int argc, char** argv) {
     // step 0 - parameters
     static struct option long_options[] = {
         {"transport",   required_argument,  0,  't'},
+#ifdef	CUDA_FOUND
+	{"cuda",        required_argument,  0,  'c'},
+#endif
         {"size",        required_argument,  0,  's'},
         {"depth",       required_argument,  0,  'd'},
         {"warmup",      required_argument,  0,  'w'},
@@ -216,7 +235,10 @@ int main(int argc, char** argv) {
     int c;
 
     std::string transport;
-    size_t      size_byte = 1024;;
+#ifdef	CUDA_FOUND
+    int32_t	cuda_dev = -1;
+#endif
+    size_t      size_byte = 1024;
     size_t      depth = 16;
     uint32_t    warmup_sec = 1;
     uint32_t    duration_sec = 5;
@@ -234,6 +256,11 @@ int main(int argc, char** argv) {
         case 't':
             transport = optarg;
             break;
+#ifdef	CUDA_FOUND
+	case 'c':
+	    cuda_dev = std::stol(optarg);
+	    break;
+#endif
         case 's':
             size_byte = std::stol(optarg);
             break;
@@ -268,13 +295,20 @@ int main(int argc, char** argv) {
 
     std::cout << "Evaluating transport performance with the following configuration:" << std::endl;
     std::cout << "\ttransport:  " << transport << std::endl;
+#ifdef CUDA_FOUND
+    std::cout << "\tcuda dev:   " << cuda_dev << std::endl;
+#endif
     std::cout << "\tsize:       " << size_byte << std::endl;
     std::cout << "\tdepth:      " << depth << std::endl;
     std::cout << "\twarmup:     " << warmup_sec << std::endl;
     std::cout << "\tduration:   " << duration_sec << std::endl;
 
     if (transport == "oob") {
-        ret = oob_perf(size_byte,depth,warmup_sec,duration_sec);
+        ret = oob_perf(
+#ifdef CUDA_FOUND
+                       cuda_dev,
+#endif
+		       size_byte,depth,warmup_sec,duration_sec);
     } else {
         std::cerr << "'" << transport << "' support is under construction." << std::endl;
         return 3;
