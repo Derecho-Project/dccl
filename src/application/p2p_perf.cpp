@@ -207,7 +207,7 @@ static int oob_perf(
         TIMESTAMP(TT_OOB_TEST_END,my_rank,0);
 
         // STEP 3.3: done
-        std::cout << "Test done." << std::endl;
+        std::cout << "Test done. sent " << count << " messages." << std::endl;
 #ifdef CUDA_FOUND
         if (cuda_dev >= 0) {
             void* tptr = malloc(pool_size);
@@ -231,7 +231,7 @@ static int oob_perf(
             OOB_WAIT_SEND(peer_id,PERF_OOB_TIMEOUT_US);
             pending --;
         }
-        std::cout << "Sender finished." << std::endl;
+        std::cout << "Sender finished with total " << count << " messages." << std::endl;
         FLUSH_AND_CLEAR_TIMESTAMP("oob.dat");
     } else { // receiver
         std::cout << "Start as a receiver..." << std::endl;
