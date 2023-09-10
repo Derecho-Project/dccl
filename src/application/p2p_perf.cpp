@@ -250,7 +250,9 @@ static int oob_perf(
 #ifdef CUDA_FOUND
             if (cuda_dev >= 0) {
                 uint8_t test_byte;
-                ASSERTDRV(cuMemcpyDtoH(static_cast<void*>(&test_byte),reinterpret_cast<CUdeviceptr>(pool_ptr),1));
+                ASSERTDRV(cuMemcpyDtoH(static_cast<void*>(&test_byte),
+                                       reinterpret_cast<CUdeviceptr>(__BUF_PTR__(pool_ptr,size_byte,depth,nrecv)),
+                                       1));
                 if (test_byte != 0xFF) {
                     riov.iov_base = __BUF_PTR__(pool_ptr,size_byte,depth,npost);
                     OOB_RECV(peer_id,&riov,1);
