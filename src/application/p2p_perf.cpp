@@ -106,7 +106,14 @@ static int oob_perf(
     }
 #ifdef CUDA_FOUND
     if (cuda_dev >= 0) {
-        //TODO: initialize cuda memory
+        void* tptr = malloc(pool_size);
+        if (tptr == nullptr) {
+            std::cerr << "Failed to allocated temp memory" << strerror(errno) << std::endl;
+            return -1;
+        }
+        bzero(tptr,pool_size);
+        ASSERTDRV(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(pool_ptr),tptr,pool_size));
+        free(tptr);
     } else {
 #endif
         bzero(pool_ptr,pool_size);
@@ -203,7 +210,14 @@ static int oob_perf(
         std::cout << "Test done." << std::endl;
 #ifdef CUDA_FOUND
         if (cuda_dev >= 0) {
-            // TODO: set cuda memory 
+            void* tptr = malloc(pool_size);
+            if (tptr == nullptr) {
+                std::cerr << "Failed to allocated temp memory" << strerror(errno) << std::endl;
+                return -1;
+            }
+            memset(tptr,0xff,pool_size);
+            ASSERTDRV(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(pool_ptr),tptr,pool_size));
+            free(tptr);
         } else {
 #endif
             memset(pool_ptr,0xff,pool_size);
@@ -235,10 +249,13 @@ static int oob_perf(
             OOB_WAIT_RECV(peer_id,PERF_OOB_TIMEOUT_US);
 #ifdef CUDA_FOUND
             if (cuda_dev >= 0) {
-                // TODO: test GPU memory contents.
-                riov.iov_base = __BUF_PTR__(pool_ptr,size_byte,depth,npost);
-                OOB_RECV(peer_id,&riov,1);
-                npost ++;
+                uint8_t test_byte;
+                ASSERTDRV(cuMemcpyDtoH(static_cast<void*>(&test_byte),reinterpret_cast<CUdeviceptr>(pool_ptr),1));
+                if (test_byte != 0xFF) {
+                    riov.iov_base = __BUF_PTR__(pool_ptr,size_byte,depth,npost);
+                    OOB_RECV(peer_id,&riov,1);
+                    npost ++;
+                }
             } else {
 #else
                 if (*static_cast<uint8_t*>(__BUF_PTR__(pool_ptr,size_byte,depth,nrecv)) != 0xFF) {
