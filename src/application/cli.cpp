@@ -4,11 +4,28 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <derecho/utils/time.h>
+#include <cassert>
 
 #ifdef __BUILD_FOR_OMPI__
 #include <mpi.h>
 #include <stdlib.h>
 #endif//__BUILD_FOR_OMPI__
+
+#if defined(CUDA_FOUND)
+//TODO: find a better way to determine CUDA L1 cache line size
+#define CUDA_L1_CACHELINE_SIZE  (128)
+#define ASSERTRT(stmt) \
+    do { \
+        cudaError_t err = (stmt); \
+        if (err != cudaSuccess) { \
+            const char *_err_desc = cudaGetErrorString(err); \
+            std::cerr << "CUDA Runtime Error: " \
+                      << "(" << err << ")" \
+                      << _err_desc << std::endl; \
+        } \
+        assert(err == cudaSuccess); \
+    } while(0)
+#endif
 
 using namespace dccl;
 
@@ -19,6 +36,9 @@ const char* help_string =
     "\t             - 'send' and 'recv' only work between rank 0 and 1. \n"
     "\t             - only rank 0 will 'broadcast', all other node will receive. \n"
     "\t             - 'reduce' will reduce to rank 0.\n"
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+    "\t--gpu,-g     gpu device to use. If not specified, CPU is used.\n"
+#endif
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
     "\t--repeat,-r  number of operations for evaluation, defaulted to 1000.\n"
     "\t--type,-t    type of the data, defaulted to uint32. Full type list:\n"
@@ -151,6 +171,9 @@ int main(int argc, char** argv) {
     // step 0 - parameters
     static struct option long_options[] = {
         {"api",     required_argument,  0,  'a'},
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+        {"gpu",     required_argument,  0,  'g'},
+#endif
         {"warmup",  required_argument,  0,  'w'},
         {"repeat",  required_argument,  0,  'r'},
         {"type",    required_argument,  0,  't'},
@@ -163,6 +186,9 @@ int main(int argc, char** argv) {
     int c;
 
     std::string api;
+#if !defined(__BUILD_FOR_OMPI__)
+    int32_t     gpu = -1;
+#endif//!__BUILD_FOR_OMPI__
     size_t warmup_count = 0;
     size_t repeat_count = 1000;
 #ifdef __BUILD_FOR_OMPI__
@@ -176,7 +202,7 @@ int main(int argc, char** argv) {
 
     while (true) {
         int option_index = 0;
-        c = getopt_long(argc,argv, "a:w:r:t:o:c:h", long_options, &option_index);
+        c = getopt_long(argc,argv, "a:g:w:r:t:o:c:h", long_options, &option_index);
 
         if (c == -1) {
             break;
@@ -186,6 +212,11 @@ int main(int argc, char** argv) {
         case 'a':
             api = optarg;
             break;
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+        case 'g':
+            gpu = std::stoi(optarg);
+            break;
+#endif//defined(CUDA_FOUND)
         case 'w':
             warmup_count = std::stoul(optarg);
             break;
@@ -219,6 +250,9 @@ int main(int argc, char** argv) {
     std::cout << "dccl api evaluation with the following configuration:" << std::endl;
 #endif
     std::cout << "\tapi:" << api << std::endl;
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+    std::cout << "\tgpu:" << gpu << "\t(CPU == -1)" << std::endl;
+#endif//defined(CUDA_FOUND)
     std::cout << "\twarmup:" << warmup_count << std::endl;
     std::cout << "\trepeat:" << repeat_count << std::endl;
     std::cout << "\ttype:" << data_type << std::endl;
@@ -291,23 +325,46 @@ int main(int argc, char** argv) {
         return 1;
     }
 #endif//__USE_OMPI_WIN__
+    // initialize sendbuf and recvbuf
+    memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
+    memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
 #else
     size_t data_size = size_of_type(data_type);
     void* dccl_sendbuf = nullptr;
     void* dccl_recvbuf = nullptr;
-    if (posix_memalign(&dccl_sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
-        posix_memalign(&dccl_recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
-        std::cerr << "Failed to allocate " << (data_count*data_size + CACHELINE_SIZE) << " bytes" << std::endl;
-        std::cerr << "Error:" << std::strerror(errno) << std::endl;
-        ncclCommFinalize(comm);
-        return 1;
+#if defined(CUDA_FOUND)
+    cudaStream_t stream = static_cast<cudaStream_t>(nullptr);
+
+    if (gpu < 0) { // HOST Memory
+#endif//CUDA_FOUND
+        if (posix_memalign(&dccl_sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
+            posix_memalign(&dccl_recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
+            std::cerr << "Failed to allocate " << (data_count*data_size + CACHELINE_SIZE) << " bytes" << std::endl;
+            std::cerr << "Error:" << std::strerror(errno) << std::endl;
+            ncclCommFinalize(comm);
+            return 1;
+        }
+        sendbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_sendbuf) + ENFORCE_BUFFER_OFFSET);
+        recvbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_recvbuf) + ENFORCE_BUFFER_OFFSET);
+        // initialize sendbuf and recvbuf
+        memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
+        memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
+#if defined(CUDA_FOUND)
+    } else { // GPU Memory
+        ASSERTRT(cudaSetDevice(gpu));
+        ASSERTRT(cudaMalloc(&dccl_sendbuf, data_count * data_size + CUDA_L1_CACHELINE_SIZE));
+        ASSERTRT(cudaMalloc(&dccl_recvbuf, data_count * data_size + CUDA_L1_CACHELINE_SIZE));
+        ASSERTRT(cudaStreamCreate(&stream));
+        sendbuf = __ADDRESS_ALIGN__(reinterpret_cast<uintptr_t>(dccl_sendbuf) + CUDA_L1_CACHELINE_SIZE,
+                                    CUDA_L1_CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
+        recvbuf = __ADDRESS_ALIGN__(reinterpret_cast<uintptr_t>(dccl_recvbuf) + CUDA_L1_CACHELINE_SIZE,
+                                    CUDA_L1_CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
+        ASSERTRT(cudaMemset(sendbuf,static_cast<int>(my_rank),data_count*data_size));
+        ASSERTRT(cudaMemset(recvbuf,static_cast<int>(my_rank),data_count*data_size));
     }
-    sendbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_sendbuf) + ENFORCE_BUFFER_OFFSET);
-    recvbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_recvbuf) + ENFORCE_BUFFER_OFFSET);
+#endif//CUDA_FOUND
 #endif//__BUILD_FOR_OMPI__
-    // initialize sendbuf and recvbuf
-    memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
-    memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
+
 #ifdef __BUILD_FOR_OMPI__
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
@@ -328,26 +385,26 @@ int main(int argc, char** argv) {
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
         if (api == "all_reduce") { \
-            ret = ncclAllReduce(sendbuf,sendbuf,data_count,data_type,operation,comm); \
+            ret = ncclAllReduce(sendbuf,sendbuf,data_count,data_type,operation,comm,stream); \
         } else if (api == "reduce_scatter") { \
             ret = ncclReduceScatter(sendbuf, \
                                     reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
-                                    data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
+                                    data_count/dcclGetWorldSize(comm),data_type,operation,comm,stream); \
         } else if (api == "all_gather") { \
             ret = ncclAllGather(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
                                 sendbuf, \
-                                data_count/dcclGetWorldSize(comm),data_type,comm); \
+                                data_count/dcclGetWorldSize(comm),data_type,comm,stream); \
         } else if (api == "reduce") { \
-            ret = ncclReduce(sendbuf,sendbuf,data_count,data_type,operation,0,comm); \
+            ret = ncclReduce(sendbuf,sendbuf,data_count,data_type,operation,0,comm,stream); \
         } else if (api == "broadcast") { \
-            ret = ncclBroadcast(sendbuf,recvbuf,data_count, data_type, 0, comm); \
+            ret = ncclBroadcast(sendbuf,recvbuf,data_count,data_type,0,comm,stream); \
         } else if (api == "send") { \
             if (my_rank < 2) { \
-                ret = ncclSend(sendbuf,data_count,data_type,1 - my_rank,comm); \
+                ret = ncclSend(sendbuf,data_count,data_type,1 - my_rank,comm,stream); \
             } \
         } else if (api == "recv") { \
             if (my_rank < 2) { \
-                ret = ncclRecv(sendbuf,data_count,data_type,1 - my_rank, comm); \
+                ret = ncclRecv(sendbuf,data_count,data_type,1 - my_rank,comm,stream); \
             } \
         } else { \
             ret = ncclInvalidArgument; \
@@ -404,10 +461,18 @@ int main(int argc, char** argv) {
     if (dcclDeregisterCacheMemory(comm,recvbuf) != ncclSuccess) {
         std::cerr << "Failed to deregister recvbuf@" << recvbuf << "from dccl." << std::endl;
     }
-
+#if defined(CUDA_FOUND)
     // free data
-    free(dccl_sendbuf);
-    free(dccl_recvbuf);
+    if (gpu < 0) {
+#endif//CUDA_FOUND
+        free(dccl_sendbuf);
+        free(dccl_recvbuf);
+#if defined(CUDA_FOUND)
+    } else {
+        ASSERTRT(cudaFree(dccl_sendbuf));
+        ASSERTRT(cudaFree(dccl_recvbuf));
+    }
+#endif//CUDA_FOUND
 #endif//__BUILD_FOR_OMPI__
 
     // step 5 -flush timestmap
