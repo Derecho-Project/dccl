@@ -516,6 +516,10 @@ public:
 #define     TT_ALLREDUCE_ALLGATHER          TT_DCCL(1040)
 #define     TT_ALLREDUCE_RDH_POSTPROCESS    TT_DCCL(1041)
 #define     TT_ALLREDUCE_DONE               TT_DCCL(1100)
+
+//BROADCAST
+#define     TT_BROADCAST_ENTER              TT_DCCL(2001)
+#define     TT_BROADCAST_DONE               TT_DCCL(2100)
 /**
  * @endcond
  */

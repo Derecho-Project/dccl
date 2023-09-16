@@ -315,6 +315,10 @@ int main(int argc, char** argv) {
             TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,0); \
             ompi_err = MPI_Allreduce(MPI_IN_PLACE,sendbuf,data_count,data_type,operation,MPI_COMM_WORLD); \
             TIMESTAMP(TT_ALLREDUCE_DONE,my_rank,0); \
+        } else if (api == "broadcast") { \
+            TIMESTAMP(TT_BROADCAST_ENTER,my_rank,0); \
+            ompi_err = MPI_Bcast(sendbuf,data_count,data_type,0,MPI_COMM_WORLD); \
+            TIMESTAMP(TT_BROADCAST_DONE,my_rank,0); \
         } else { \
             ompi_err = ~MPI_SUCCESS; \
         } \
