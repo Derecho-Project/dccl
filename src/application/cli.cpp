@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <derecho/utils/time.h>
+#include <derecho/conf/conf.hpp>
+#include <queue>
 
 #ifdef __BUILD_FOR_OMPI__
 #include <mpi.h>
@@ -309,6 +311,8 @@ int main(int argc, char** argv) {
     memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
     memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
 #ifdef __BUILD_FOR_OMPI__
+    std::queue<MPI_Request> pending_requests;
+    uint32_t window_size = derecho::getConfUInt32(derecho::Conf::SUBGROUP_DEFAULT_WINDOW_SIZE);
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
         if (api == "all_reduce") { \
@@ -317,7 +321,18 @@ int main(int argc, char** argv) {
             TIMESTAMP(TT_ALLREDUCE_DONE,my_rank,0); \
         } else if (api == "broadcast") { \
             TIMESTAMP(TT_BROADCAST_ENTER,my_rank,0); \
-            ompi_err = MPI_Bcast(sendbuf,data_count,data_type,0,MPI_COMM_WORLD); \
+            while(pending_requests.size()>=window_size) { \
+                MPI_Status status; \
+                ompi_err = MPI_Wait(&pending_requests.front(),&status); \
+                if (ompi_err != MPI_SUCCESS) { \
+                    std::cout << "MPI_Wait() failed with error:" << ompi_err << std::endl; \
+                    return 2; \
+                } \
+                pending_requests.pop(); \
+            } \
+            MPI_Request request; \
+            ompi_err = MPI_Ibcast(sendbuf,data_count,data_type,0,MPI_COMM_WORLD,&request); \
+            pending_requests.push(request); \
             TIMESTAMP(TT_BROADCAST_DONE,my_rank,0); \
         } else { \
             ompi_err = ~MPI_SUCCESS; \
@@ -382,12 +397,21 @@ int main(int argc, char** argv) {
     TIMESTAMP(TT_WARMUP_END,my_rank,0);
     std::cout << "done." << std::endl;
 
-
     // step 4 - run test
     uint64_t cnt = repeat_count;
     std::cout << "run test..." << std::endl;
     TIMESTAMP(TT_TEST_START,my_rank,0);
     RUN_WITH_COUNTER(cnt);
+#ifdef __BUILD_FOR_OMPI__
+    while (pending_requests.size()) {
+        MPI_Status status;
+        ompi_err = MPI_Wait(&pending_requests.front(),&status);
+        if (ompi_err != MPI_SUCCESS) {
+            std::cerr << "MPI_Wait failed with error:" << ompi_err << std::endl;
+        }
+        pending_requests.pop();
+    }
+#endif//__BUILD_FOR_OMPI__
     TIMESTAMP(TT_TEST_END,my_rank,0);
     std::cout << "done." << std::endl;
 #ifdef __BUILD_FOR_OMPI__
