@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.12.4)
 set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
-project(dccl CXX)
+include(CheckLanguage)
+check_language(CUDA)
+project(dccl CUDA CXX)
 
 # Version
 set(dccl_VERSION 1.0rc0)
@@ -55,6 +57,22 @@ find_package(OpenSSL REQUIRED)
 
 # derecho
 find_package(derecho CONFIG REQUIRED)
+
+# cuda
+find_package(CUDAToolkit)
+
+if (NOT DEFINED CMAKE_CUDA_STANDARD)
+    set(CMAKE_CUDA_STANDARD 17)
+    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+endif()
+
+if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    execute_process(COMMAND bash -c "nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits | sed 's/\\.//'"
+                    OUTPUT_VARIABLE NATIVE_CUDA_ARCH)
+    string(STRIP ${NATIVE_CUDA_ARCH} NATIVE_CUDA_ARCH)
+    set(CMAKE_CUDA_ARCHITECTURES ${NATIVE_CUDA_ARCH})
+    message("NATIVE_CUDA_ARCH=${NATIVE_CUDA_ARCH}")
+endif()
 
 # openmpi
 find_package(MPI REQUIRED)
