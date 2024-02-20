@@ -4,6 +4,10 @@
 #include <derecho/utils/time.h>
 #include <dccl/dccl.hpp>
 
+#ifdef CUDA_FOUND
+#include <cuda.h>
+#endif
+
 using namespace derecho;
 using namespace dccl;
 
@@ -36,7 +40,24 @@ public:
     void ensure_registerd(mutils::DeserializationManager&) {}
 };
 
-static int oob_perf(size_t      size_byte,
+#ifdef CUDA_FOUND
+#define ASSERTDRV(stmt) \
+    do { \
+        CUresult result = (stmt); \
+        if (result != CUDA_SUCCESS) { \
+            const char *_err_name; \
+            cuGetErrorName(result, &_err_name); \
+            std::cout << "CUDA error: (" << result << ")" << _err_name << std::endl; \
+        } \
+        assert(CUDA_SUCCESS == result); \
+    } while(0)
+#endif
+
+static int oob_perf(
+#ifdef CUDA_FOUND
+                    int32_t 	cuda_dev,
+#endif
+		            size_t      size_byte,
                     size_t      depth,
                     uint32_t    warmup_sec,
                     uint32_t    duration_sec) {
@@ -54,11 +75,51 @@ static int oob_perf(size_t      size_byte,
     // STEP 2: prepare memory pool
     size_t pool_size    = (size_byte*depth + 4095)/4096*4096;
     void*  pool_ptr;
+#ifdef	CUDA_FOUND
+    CUdevice    cuda_device;
+    CUcontext   cuda_context;
+    if (cuda_dev >= 0) {
+        ASSERTDRV(cuInit(0));
+        int n_devices = 0;
+        ASSERTDRV(cuDeviceGetCount(&n_devices));
+
+        if (cuda_dev >= n_devices) {
+            std::cerr << "We found " << n_devices << " GPUs. dev id:" 
+                      << cuda_dev << " is invalid." << std::endl;
+            return -1;
+        }
+
+        ASSERTDRV(cuDeviceGet(&cuda_device,cuda_dev));
+        ASSERTDRV(cuDevicePrimaryCtxRetain(&cuda_context, cuda_device));
+        ASSERTDRV(cuCtxSetCurrent(cuda_context));
+
+	    int rc = cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&pool_ptr),pool_size);
+        if ( rc != CUDA_SUCCESS ) {
+            std::cerr << "Failed to allocate cuda memory. cuMemAlloc() returns " << rc << std::endl;
+            return -1;
+        }
+    } else
+#endif
     if (posix_memalign(&pool_ptr,4096,pool_size)) {
         std::cerr << "Failed to allocate memory:" << strerror(errno) << std::endl;
         return -1;
     }
-    bzero(pool_ptr,pool_size);
+#ifdef CUDA_FOUND
+    if (cuda_dev >= 0) {
+        void* tptr = malloc(pool_size);
+        if (tptr == nullptr) {
+            std::cerr << "Failed to allocated temp memory" << strerror(errno) << std::endl;
+            return -1;
+        }
+        bzero(tptr,pool_size);
+        ASSERTDRV(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(pool_ptr),tptr,pool_size));
+        free(tptr);
+    } else {
+#endif
+        bzero(pool_ptr,pool_size);
+#ifdef CUDA_FOUND
+    }
+#endif
     g.register_oob_memory(pool_ptr,pool_size);
     std::cout << pool_size << " bytes are registered as OOB cache." << std::endl;
 
@@ -146,8 +207,23 @@ static int oob_perf(size_t      size_byte,
         TIMESTAMP(TT_OOB_TEST_END,my_rank,0);
 
         // STEP 3.3: done
-        std::cout << "Test done." << std::endl;
-        memset(pool_ptr,0xff,pool_size);
+        std::cout << "Test done. sent " << count << " messages." << std::endl;
+#ifdef CUDA_FOUND
+        if (cuda_dev >= 0) {
+            void* tptr = malloc(pool_size);
+            if (tptr == nullptr) {
+                std::cerr << "Failed to allocated temp memory" << strerror(errno) << std::endl;
+                return -1;
+            }
+            memset(tptr,0xff,pool_size);
+            ASSERTDRV(cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(pool_ptr),tptr,pool_size));
+            free(tptr);
+        } else {
+#endif
+            memset(pool_ptr,0xff,pool_size);
+#ifdef CUDA_FOUND
+        }
+#endif
         while(pending<depth) {
             __OOB_SEND;
         }
@@ -155,7 +231,7 @@ static int oob_perf(size_t      size_byte,
             OOB_WAIT_SEND(peer_id,PERF_OOB_TIMEOUT_US);
             pending --;
         }
-        std::cout << "Sender finished." << std::endl;
+        std::cout << "Sender finished with total " << count << " messages." << std::endl;
         FLUSH_AND_CLEAR_TIMESTAMP("oob.dat");
     } else { // receiver
         std::cout << "Start as a receiver..." << std::endl;
@@ -171,10 +247,25 @@ static int oob_perf(size_t      size_byte,
         }
         while(npost > nrecv) {
             OOB_WAIT_RECV(peer_id,PERF_OOB_TIMEOUT_US);
-            if (*static_cast<uint8_t*>(__BUF_PTR__(pool_ptr,size_byte,depth,nrecv)) != 0xFF) {
-                riov.iov_base = __BUF_PTR__(pool_ptr,size_byte,depth,npost);
-                OOB_RECV(peer_id,&riov,1);
-                npost ++;
+#ifdef CUDA_FOUND
+            if (cuda_dev >= 0) {
+                uint8_t test_byte;
+                ASSERTDRV(cuMemcpyDtoH(static_cast<void*>(&test_byte),
+                                       reinterpret_cast<CUdeviceptr>(__BUF_PTR__(pool_ptr,size_byte,depth,nrecv)),
+                                       1));
+                if (test_byte != 0xFF) {
+                    riov.iov_base = __BUF_PTR__(pool_ptr,size_byte,depth,npost);
+                    OOB_RECV(peer_id,&riov,1);
+                    npost ++;
+                }
+            } else {
+#else
+                if (*static_cast<uint8_t*>(__BUF_PTR__(pool_ptr,size_byte,depth,nrecv)) != 0xFF) {
+                    riov.iov_base = __BUF_PTR__(pool_ptr,size_byte,depth,npost);
+                    OOB_RECV(peer_id,&riov,1);
+                    npost ++;
+                }
+#endif
             }
             nrecv ++;
         }
@@ -185,12 +276,26 @@ static int oob_perf(size_t      size_byte,
     // STEP 4: finish.
     g.deregister_oob_memory(pool_ptr);
     g.barrier_sync();
+
+#ifdef	CUDA_FOUND
+    if (cuda_dev >= 0) {
+        ASSERTDRV(cuMemFree(reinterpret_cast<CUdeviceptr>(pool_ptr)));
+        ASSERTDRV(cuDevicePrimaryCtxRelease(cuda_device));
+    } else {
+#endif
+        free(pool_ptr);
+#ifdef  CUDA_FOUND
+    }
+#endif
     return 0;
 }
 
 const char* help_string = 
     "\t--transport,-t       name of the p2p transport driver. This option is mandatory.\n"
     "\t                     Transport choices: ucx,oob\n"
+#ifdef	CUDA_FOUND
+    "\t--cuda,-c            using gpu memory on specified cuda device.\n"
+#endif
     "\t--size,-s            message size in bytes, default to 1024 bytes.\n"
     "\t--depth,-d           window deption, default to 16.\n"
     "\t--warmup,-w          duration of the warming up in seconds, default to one second.\n"
@@ -206,6 +311,9 @@ int main(int argc, char** argv) {
     // step 0 - parameters
     static struct option long_options[] = {
         {"transport",   required_argument,  0,  't'},
+#ifdef	CUDA_FOUND
+	{"cuda",        required_argument,  0,  'c'},
+#endif
         {"size",        required_argument,  0,  's'},
         {"depth",       required_argument,  0,  'd'},
         {"warmup",      required_argument,  0,  'w'},
@@ -216,7 +324,10 @@ int main(int argc, char** argv) {
     int c;
 
     std::string transport;
-    size_t      size_byte = 1024;;
+#ifdef	CUDA_FOUND
+    int32_t	cuda_dev = -1;
+#endif
+    size_t      size_byte = 1024;
     size_t      depth = 16;
     uint32_t    warmup_sec = 1;
     uint32_t    duration_sec = 5;
@@ -224,7 +335,7 @@ int main(int argc, char** argv) {
     
     while (true) {
         int option_index = 0;
-        c = getopt_long(argc,argv, "t:s:d:w:D:h", long_options, &option_index);
+        c = getopt_long(argc,argv, "t:c:s:d:w:D:h", long_options, &option_index);
 
         if (c == -1) {
             break;
@@ -234,6 +345,11 @@ int main(int argc, char** argv) {
         case 't':
             transport = optarg;
             break;
+#ifdef	CUDA_FOUND
+	    case 'c':
+	        cuda_dev = std::stol(optarg);
+	        break;
+#endif
         case 's':
             size_byte = std::stol(optarg);
             break;
@@ -268,13 +384,20 @@ int main(int argc, char** argv) {
 
     std::cout << "Evaluating transport performance with the following configuration:" << std::endl;
     std::cout << "\ttransport:  " << transport << std::endl;
+#ifdef CUDA_FOUND
+    std::cout << "\tcuda dev:   " << cuda_dev << std::endl;
+#endif
     std::cout << "\tsize:       " << size_byte << std::endl;
     std::cout << "\tdepth:      " << depth << std::endl;
     std::cout << "\twarmup:     " << warmup_sec << std::endl;
     std::cout << "\tduration:   " << duration_sec << std::endl;
 
     if (transport == "oob") {
-        ret = oob_perf(size_byte,depth,warmup_sec,duration_sec);
+        ret = oob_perf(
+#ifdef CUDA_FOUND
+                       cuda_dev,
+#endif
+		       size_byte,depth,warmup_sec,duration_sec);
     } else {
         std::cerr << "'" << transport << "' support is under construction." << std::endl;
         return 3;

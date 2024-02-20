@@ -75,10 +75,19 @@ if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 endif()
 
 # openmpi
-find_package(MPI REQUIRED)
+find_package(MPI)
 
 # doxygen
 find_package(Doxygen)
+
+# cuda found
+include(CheckLanguage)
+check_language(CUDA)
+if (CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+    find_package(CUDAToolkit)
+    set( CUDA_FOUND 1 )
+endif()
 
 # Derecho exports an IMPORT target, following the "new" way of
 # doing things, but for some reason we still need to do this

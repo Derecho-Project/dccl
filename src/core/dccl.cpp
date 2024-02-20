@@ -245,7 +245,9 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                            size_t           count,
                            ncclDataType_t   datatype,
                            ncclRedOp_t      op,
-                           ncclComm_t       comm) {
+                           ncclComm_t       comm,
+                           cudaStream_t     stream) {
+    // TODO: stream
     uint32_t        my_rank =           dcclGetMyRank(comm);
     ncclResult_t    ret =               ncclSuccess;
     size_t          total_data_size =   count * size_of_type(datatype);
@@ -334,7 +336,9 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
                                size_t           recvcount,
                                ncclDataType_t   datatype,
                                ncclRedOp_t      op,
-                               ncclComm_t       comm) {
+                               ncclComm_t       comm,
+                               cudaStream_t     stream) {
+    // TODO:
     VALIDATE_COMM(comm);
     uint32_t        my_rank     = dcclGetMyRank(comm);
     uint32_t        world_size  = dcclGetWorldSize(comm);
@@ -397,7 +401,8 @@ error_group_1:
 }
 
 ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
-        ncclDataType_t datatype, int root, ncclComm_t comm) {
+        ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream) {
+    // TODO:
     VALIDATE_COMM(comm);
     ncclResult_t    ret     = ncclSuccess;
     uint32_t    my_rank     = dcclGetMyRank(comm);
@@ -433,12 +438,13 @@ ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
 }
 
 ncclResult_t ncclBcast(void* buff, size_t count, ncclDataType_t datatype,
-        int root, ncclComm_t comm) {
-    return ncclBroadcast(buff,buff,count,datatype,root,comm);
+        int root, ncclComm_t comm, cudaStream_t stream) {
+    return ncclBroadcast(buff,buff,count,datatype,root,comm,stream);
 }
 
 ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
-        ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm) {
+        ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
+    //TODO: stream
     uint32_t        my_rank =           dcclGetMyRank(comm);
     ncclResult_t    ret =               ncclSuccess;
     size_t          total_data_size =   count * size_of_type(datatype);
@@ -540,7 +546,8 @@ error_group_1:
 }
 
 ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
-        ncclDataType_t datatype, ncclComm_t comm) {
+        ncclDataType_t datatype, ncclComm_t comm, cudaStream_t stream) {
+    //TODO: stream
     VALIDATE_COMM(comm);
     uint32_t my_rank    = dcclGetMyRank(comm);
     void*    slot_base  = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(recvbuff) + sendcount * my_rank * size_of_type(datatype));
@@ -555,7 +562,8 @@ ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcoun
 }
 
 ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
-        ncclComm_t comm) {
+        ncclComm_t comm, cudaStream_t stream) {
+    //TODO: stream
     VALIDATE_COMM(comm);
     uint32_t my_rank    = dcclGetMyRank(comm);
     if (static_cast<uint32_t>(peer) == my_rank) {
@@ -578,8 +586,8 @@ ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatyp
 }
 
 ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
-        ncclComm_t comm) {
-
+        ncclComm_t comm, cudaStream_t stream) {
+    //TODO: stream
     VALIDATE_COMM(comm);
     uint32_t my_rank    = dcclGetMyRank(comm);
     if (static_cast<uint32_t>(peer) == my_rank) {
