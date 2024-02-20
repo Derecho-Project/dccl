@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #endif//__BUILD_FOR_OMPI__
 
-#if defined(CUDA_FOUND)
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI)
 //TODO: find a better way to determine CUDA L1 cache line size
 #define CUDA_L1_CACHELINE_SIZE  (128)
 #define ASSERTRT(stmt) \
@@ -216,7 +216,7 @@ int main(int argc, char** argv) {
         case 'g':
             gpu = std::stoi(optarg);
             break;
-#endif//defined(CUDA_FOUND)
+#endif//defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
         case 'w':
             warmup_count = std::stoul(optarg);
             break;
@@ -252,7 +252,7 @@ int main(int argc, char** argv) {
     std::cout << "\tapi:" << api << std::endl;
 #if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
     std::cout << "\tgpu:" << gpu << "\t(CPU == -1)" << std::endl;
-#endif//defined(CUDA_FOUND)
+#endif//defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
     std::cout << "\twarmup:" << warmup_count << std::endl;
     std::cout << "\trepeat:" << repeat_count << std::endl;
     std::cout << "\ttype:" << data_type << std::endl;
@@ -328,7 +328,7 @@ int main(int argc, char** argv) {
     // initialize sendbuf and recvbuf
     memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
     memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
-#else
+#else//__BUILD_FOR_OMPI__
     size_t data_size = size_of_type(data_type);
     void* dccl_sendbuf = nullptr;
     void* dccl_recvbuf = nullptr;

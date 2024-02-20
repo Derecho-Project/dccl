@@ -58,21 +58,6 @@ find_package(OpenSSL REQUIRED)
 # derecho
 find_package(derecho CONFIG REQUIRED)
 
-# cuda
-find_package(CUDAToolkit)
-
-if (NOT DEFINED CMAKE_CUDA_STANDARD)
-    set(CMAKE_CUDA_STANDARD 17)
-    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-endif()
-
-if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    execute_process(COMMAND bash -c "nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits | sed 's/\\.//'"
-                    OUTPUT_VARIABLE NATIVE_CUDA_ARCH)
-    string(STRIP ${NATIVE_CUDA_ARCH} NATIVE_CUDA_ARCH)
-    set(CMAKE_CUDA_ARCHITECTURES ${NATIVE_CUDA_ARCH})
-    message("NATIVE_CUDA_ARCH=${NATIVE_CUDA_ARCH}")
-endif()
 
 # openmpi
 find_package(MPI)
@@ -81,12 +66,23 @@ find_package(MPI)
 find_package(Doxygen)
 
 # cuda found
-include(CheckLanguage)
-check_language(CUDA)
 if (CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
     find_package(CUDAToolkit)
     set( CUDA_FOUND 1 )
+
+    if (NOT DEFINED CMAKE_CUDA_STANDARD)
+        set(CMAKE_CUDA_STANDARD 17)
+        set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+    endif()
+    
+    if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        execute_process(COMMAND bash -c "nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits | sed 's/\\.//'"
+                        OUTPUT_VARIABLE NATIVE_CUDA_ARCH)
+        string(STRIP ${NATIVE_CUDA_ARCH} NATIVE_CUDA_ARCH)
+        set(CMAKE_CUDA_ARCHITECTURES ${NATIVE_CUDA_ARCH})
+        message("NATIVE_CUDA_ARCH=${NATIVE_CUDA_ARCH}")
+    endif()
 endif()
 
 # Derecho exports an IMPORT target, following the "new" way of

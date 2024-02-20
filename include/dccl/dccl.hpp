@@ -8,7 +8,7 @@
 #include <string>
 #endif//ENABLE_EVALUATION
 
-#if defined(CUDA_FOUND)
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
 #include <cuda_runtime.h>
 #else
 /**

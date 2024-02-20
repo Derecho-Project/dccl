@@ -15,3 +15,8 @@ target_include_directories(core PRIVATE
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
+if ( ${CUDA_FOUND} )
+    target_include_directories(core PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}>
+    )
+endif()
