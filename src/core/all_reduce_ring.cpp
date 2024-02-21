@@ -11,7 +11,8 @@ ncclResult_t all_reduce_ring(
         size_t          count,
         ncclDataType_t  datatype,
         ncclRedOp_t     op,
-        ncclComm_t      comm) {
+        ncclComm_t      comm,
+        cudaStream_t    stream) {
     uint32_t        my_rank = dcclGetMyRank(comm);
     ncclResult_t    ret = ncclSuccess;
     uint32_t        world_size =    dcclGetWorldSize(comm);
@@ -34,7 +35,7 @@ ncclResult_t all_reduce_ring(
 
 
     // STEP 2 ring reduce scatter
-    ret = reduce_scatter_ring(buffer,scratchpad,count,datatype,op,comm,
+    ret = reduce_scatter_ring(buffer,scratchpad,count,datatype,op,comm,stream,
                               [](uint32_t r){return r;},
                               [](uint32_t r){return r;});
     if (ret != ncclSuccess) {
@@ -45,7 +46,7 @@ ncclResult_t all_reduce_ring(
     TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
 
     // STEP 3 ring all gather
-    ret = all_gather_ring(buffer,count/world_size,datatype,comm,
+    ret = all_gather_ring(buffer,count/world_size,datatype,comm,stream,
                           [world_size](uint32_t r){return (r + 1)%world_size;},
                           [world_size](uint32_t r){return (r - 1 + world_size)%world_size;});
     

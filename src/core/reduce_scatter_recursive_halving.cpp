@@ -16,6 +16,7 @@ ncclResult_t reduce_scatter_recursive_halving(
         ncclDataType_t          datatype,
         ncclRedOp_t             op,
         ncclComm_t              comm,
+        cudaStream_t            stream,
         uint32_t                subworld_size,
         const rank_converter_t& to_new_rank,
         const rank_converter_t& to_old_rank) {

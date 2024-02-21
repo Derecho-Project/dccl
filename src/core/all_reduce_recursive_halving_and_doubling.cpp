@@ -11,7 +11,8 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         size_t          count,
         ncclDataType_t  datatype,
         ncclRedOp_t     op,
-        ncclComm_t      comm) {
+        ncclComm_t      comm,
+        cudaStream_t    stream) {
     uint32_t        my_rank = dcclGetMyRank(comm);
     ncclResult_t    ret = ncclSuccess;
     size_t          total_data_size = count * size_of_type(datatype);
@@ -160,7 +161,7 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
 
     // STEP 3 reduce scatter and all gather on subworld.
     if (my_role == Leader || my_role == Independent) {
-        ret = reduce_scatter_recursive_halving(buffer,scratchpad,count,datatype,op,comm,
+        ret = reduce_scatter_recursive_halving(buffer,scratchpad,count,datatype,op,comm,stream,
                                                subworld_size,to_new_rank,to_old_rank);
         if (ret != ncclSuccess) {
             dccl_error("{}: reduce scatter failed with error = {}.",
@@ -170,7 +171,7 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
 
         TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
 
-        ret = all_gather_recursive_doubling(buffer,count,datatype,comm,
+        ret = all_gather_recursive_doubling(buffer,count,datatype,comm,stream,
                                             subworld_size,to_new_rank,to_old_rank);
 
         if (ret != ncclSuccess) {

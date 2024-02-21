@@ -40,6 +40,7 @@ using rank_converter_t = std::function<const uint32_t(const uint32_t)>;
  * @param[in]       datatype    The type of the data.
  * @param[in]       op          The reduced operation to be performed.
  * @param[in]       comm        The DCCL communication object.
+ * @param[in]       stream      The CUDA stream.
  * @param[in]       subworld_size
  *                              The size of the subworld where this algorithm is performed. The rank inside the
  *                              'subworld' is called 'new rank', while the original rank is called 'old rank'.
@@ -57,6 +58,7 @@ ncclResult_t reduce_scatter_recursive_halving(
         ncclDataType_t          datatype,
         ncclRedOp_t             op,
         ncclComm_t              comm,
+        cudaStream_t            stream,
         uint32_t                subworld_size,
         const rank_converter_t& to_new_rank,
         const rank_converter_t& to_old_rank);
@@ -76,6 +78,7 @@ ncclResult_t reduce_scatter_recursive_halving(
  * @param[in]       datatype    The type of the data.
  * @param[in]       op          The reduced operation to be performed.
  * @param[in]       comm        The DCCL communication object.
+ * @param[in]       stream      The CUDA stream.
  * @param[in]       to_new_rank An optional lambda that translates the old rank to new rank.
  * @param[in]       to_old_rank An optional lambda that translates the new rank back to old rank.
  *
@@ -90,6 +93,7 @@ ncclResult_t reduce_scatter_ring(
         ncclDataType_t          datatype,
         ncclRedOp_t             op,
         ncclComm_t              comm,
+        cudaStream_t            stream,
         const rank_converter_t& to_new_rank,
         const rank_converter_t& to_old_rank);
 
@@ -123,6 +127,7 @@ ncclResult_t reduce_scatter_ring(
  * @param[in]       count       The number of entries in the buffer
  * @param[in]       datatype    The type of the data.
  * @param[in]       comm        The DCCL communication object.
+ * @param[in]       stream      The CUDA stream.
  * @param[in]       subworld_size
  *                              The size of the subworld where this algorithm is performed. The rank inside the
  *                              'subworld' is called 'new rank', while the original rank is called 'old rank'.
@@ -138,6 +143,7 @@ ncclResult_t all_gather_recursive_doubling(
         size_t                  count,
         ncclDataType_t          datatype,
         ncclComm_t              comm,
+        cudaStream_t            stream,
         uint32_t                subworld_size,
         const rank_converter_t& to_new_rank,
         const rank_converter_t& to_old_rank);
@@ -156,6 +162,7 @@ ncclResult_t all_gather_recursive_doubling(
  * @param[in]       count       The number of entries in the buffer.
  * @param[in]       datatype    The type of the data.
  * @param[in]       comm        The DCCL communication object.
+ * @param[in]       stream      The CUDA stream.
  * @param[in]       to_new_rank An optional lambda that translates the old rank to new rank.
  * @param[in]       to_old_rank An optional lambda that translates the new rank back to old rank.
  *
@@ -168,6 +175,7 @@ ncclResult_t all_gather_ring(
         size_t                  count,
         ncclDataType_t          datatype,
         ncclComm_t              comm,
+        cudaStream_t            stream,
         const rank_converter_t& to_new_rank,
         const rank_converter_t& to_old_rank);
 
@@ -187,6 +195,7 @@ ncclResult_t all_gather_ring(
  * @param[in]       datatype    The type of the data.
  * @param[in]       op          The reduced operation to be performed.
  * @param[in]       comm        The DCCL communication object.
+ * @param[in]       stream      The CUDA stream.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
@@ -198,7 +207,8 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         size_t          count,
         ncclDataType_t  datatype,
         ncclRedOp_t     op,
-        ncclComm_t      comm);
+        ncclComm_t      comm,
+        cudaStream_t    stream);
 
 /**
  * @brief AllReduce with binary-block
@@ -216,6 +226,7 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
  * @param[in]       datatype    The type of the data.
  * @param[in]       op          The reduced operation to be performed.
  * @param[in]       comm        The DCCL communication object.
+ * @param[in]       stream      The cuda stream.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
@@ -227,7 +238,8 @@ ncclResult_t all_reduce_recursive_binary_blocks(
         size_t          count,
         ncclDataType_t  datatype,
         ncclRedOp_t     op,
-        ncclComm_t      comm);
+        ncclComm_t      comm,
+        cudaStream_t    stream);
 
 /**
  * @brief AllReduce with ring algorithm
@@ -243,6 +255,7 @@ ncclResult_t all_reduce_recursive_binary_blocks(
  * @param[in]       datatype    The type of the data.
  * @param[in]       op          The reduced operation to be performed.
  * @param[in]       comm        The DCCL communication object.
+ * @param[in]       stream      The cuda stream.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
@@ -254,7 +267,8 @@ ncclResult_t all_reduce_ring(
         size_t          count,
         ncclDataType_t  datatype,
         ncclRedOp_t     op,
-        ncclComm_t      comm);
+        ncclComm_t      comm,
+        cudaStream_t    stream);
 
 }
 }

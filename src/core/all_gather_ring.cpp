@@ -10,6 +10,7 @@ ncclResult_t all_gather_ring(
         size_t                  count,
         ncclDataType_t          datatype,
         ncclComm_t              comm,
+        cudaStream_t            stream,
         const rank_converter_t& to_new_rank,
         const rank_converter_t& to_old_rank) {
     uint32_t        my_rank = to_new_rank(dcclGetMyRank(comm));

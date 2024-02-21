@@ -12,6 +12,7 @@ ncclResult_t reduce_scatter_ring(
         ncclDataType_t  datatype,
         ncclRedOp_t     op,
         ncclComm_t      comm,
+        cudaStream_t    stream,
         const rank_converter_t& to_new_rank,
         const rank_converter_t& to_old_rank) {
     uint32_t        my_rank = to_new_rank(dcclGetMyRank(comm));

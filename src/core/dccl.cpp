@@ -336,7 +336,6 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                            ncclRedOp_t      op,
                            ncclComm_t       comm,
                            cudaStream_t     stream) {
-    // TODO: stream
     uint32_t        my_rank =           dcclGetMyRank(comm);
     ncclResult_t    ret =               ncclSuccess;
     size_t          total_data_size =   count * size_of_type(datatype);
@@ -428,7 +427,7 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
         }
 #endif
         // STEP 3.3: ring algorithm
-        ret = algorithm::all_reduce_ring(recvbuff,host_scratchpad,count,datatype,op,comm);
+        ret = algorithm::all_reduce_ring(recvbuff,host_scratchpad,count,datatype,op,comm,stream);
         if (ret != ncclSuccess) {
             dccl_error("{}: all_reduce_ring() failed.",
                        __func__);
@@ -464,7 +463,8 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
         }
 #endif
         // STEP 3.3: rabenseifner algorithm
-        ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,host_scratchpad,count,datatype,op,comm);
+        ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,
+                                host_scratchpad,count,datatype,op,comm,stream);
         if (ret != ncclSuccess) {
             dccl_error("{}: all_reduce_recursive_halving_and_doubling() failed.",
                        __func__);
@@ -501,14 +501,13 @@ ncclResult_t dcclDeregisterCacheMemory(ncclComm_t comm, void* buffer, size_t siz
     return ncclSuccess;
 }
 
-ncclResult_t ncclReduceScatter(const void*      sendbuffer,
-                               void*            recvbuffer,
+ncclResult_t ncclReduceScatter(const void*      sendbuff,
+                               void*            recvbuff,
                                size_t           recvcount,
                                ncclDataType_t   datatype,
                                ncclRedOp_t      op,
                                ncclComm_t       comm,
                                cudaStream_t     stream) {
-    // TODO:
     VALIDATE_COMM(comm);
     uint32_t        my_rank     = dcclGetMyRank(comm);
     uint32_t        world_size  = dcclGetWorldSize(comm);
@@ -518,25 +517,64 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
     void*           _sendbuff;
 
     // prepare in-place buffer
-    if(posix_memalign(&_sendbuff,CACHELINE_SIZE,total_size)) {
-        dccl_error("{}: Failed to allocate {} bytes of memory.", __func__, total_size);
-        ret = ncclSystemError;
-        goto error_group_1;
+#ifdef CUDA_FOUND
+    bool sendbuff_in_device =   is_device_ptr(sendbuff);
+    bool recvbuff_in_device =   is_device_ptr(recvbuff);
+    if (sendbuff_in_device != recvbuff_in_device) {
+        ret = ncclInvalidArgument;
+        dccl_error("{} failed because sendbuf({}) and recvbuf({}) are in difference devices",
+                   __func__, sendbuff_in_device, recvbuff_in_device);
+        return ret;
     }
+    if (recvbuff_in_device) {
+        if (cudaMallocAsync(&_sendbuff,total_size,stream) != cudaSuccess) {
+            dccl_error("{}: Failed to allocate {} bytes of device memory.", __func__, total_size);
+            ret = ncclUnhandledCudaError;
+            goto error_group_1;
+        }
+    } else {
+#endif // CUDA_FOUND
+        if (posix_memalign(&_sendbuff,CACHELINE_SIZE,total_size)) {
+            dccl_error("{}: Failed to allocate {} bytes of host memory.", __func__, total_size);
+            ret = ncclSystemError;
+            goto error_group_1;
+        }
+#ifdef CUDA_FOUND
+    }
+#endif // CUDA_FOUND
     ret = dcclRegisterCacheMemory(comm,_sendbuff,total_size);
     if (ret != ncclSuccess) {
         dccl_error("{}: Failed to register {} bytes of _sendbuf@{:p}.", __func__, total_size, _sendbuff);
         goto error_group_2;
     }
-    memcpy(_sendbuff,sendbuffer,total_size);
-    ret = verify_host_scratchpad(slot_size,comm);
+#ifdef CUDA_FOUND
+    if (recvbuff_in_device) {
+        if (cudaMemcpyAsync(_sendbuff,sendbuff,total_size,cudaMemcpyDeviceToDevice,stream) != cudaSuccess) {
+            dccl_error("{}: Failed to copy {} bytes of device memory from {:p} to {:p}. See {}:{}",
+                       __func__, total_size, sendbuff, _sendbuff, __FILE__, __LINE__);
+            goto error_group_3;
+        }
+        ret = verify_device_scratchpad(slot_size,comm,stream);
+    } else {
+#endif // CUDA_FOUND
+        memcpy(_sendbuff,sendbuff,total_size);
+        ret = verify_host_scratchpad(slot_size,comm);
+#ifdef CUDA_FOUND
+    }
+#endif // CUDA_FOUND
     if (ret != ncclSuccess) {
         dccl_error("{}: Failed to verify scratchpad memory with size {}", __func__, slot_size);
         goto error_group_3;
     }
 
+#ifdef  CUDA_FOUND
+    if (recvbuff_in_device) {
+        sync_stream(stream);
+    }
+#endif // CUDA_FOUND
+
     // run reduce scatter
-    ret = algorithm::reduce_scatter_ring(_sendbuff,host_scratchpad,recvcount*world_size,datatype,op,comm,
+    ret = algorithm::reduce_scatter_ring(_sendbuff,host_scratchpad,recvcount*world_size,datatype,op,comm,stream,
             [world_size](uint32_t orank){return (orank + world_size - 1)%world_size;},
             [world_size](uint32_t nrank){return (nrank + 1)%world_size;});
 
@@ -545,10 +583,25 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
         goto error_group_3;
     }
 
-    // copy result to recvbuff
-    memcpy(recvbuffer,
-           reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_sendbuff)+my_rank*slot_size),
-           slot_size);
+#ifdef CUDA_FOUND
+    if (recvbuff_in_device) {
+        if (cudaMemcpyAsync(recvbuff,
+                            reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_sendbuff)+my_rank*slot_size),
+                            slot_size,cudaMemcpyDeviceToDevice,stream) != cudaSuccess) {
+            dccl_error("{} Failed to copy {} bytes of device memory from {:p} to {:p}. See {}:{}",
+                       __func__, slot_size, sendbuff,
+                       reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_sendbuff)+my_rank*slot_size),
+                       __FILE__, __LINE__ );
+        }
+    } else {
+#endif // CUDA_FOUND
+        // copy result to recvbuff
+        memcpy(recvbuff,
+               reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_sendbuff)+my_rank*slot_size),
+               slot_size);
+#ifdef CUDA_FOUND
+    }
+#endif // CUDA_FOUND
 
     // release in-place buffer
     ret = dcclDeregisterCacheMemory(comm,_sendbuff,total_size);
@@ -556,7 +609,18 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
         dccl_error("{}: Failed to deregister {} bytes of _sendbuf@{:p}.", __func__, total_size, _sendbuff);
         return ret;
     }
+
+#ifdef CUDA_FOUND
+    if (recvbuff_in_device) {
+        if(cudaFreeAsync(_sendbuff,stream) == cudaSuccess) {
+            sync_stream(stream);
+        }
+    } else {
+#endif // CUDA_FOUND
     free(_sendbuff);
+#ifdef CUDA_FOUND
+    }
+#endif // CUDA_FOUND
 
     return ret;
 
@@ -565,11 +629,22 @@ error_group_3:
         dccl_error("{}: Failed to deregister {} bytes of _sendbuf@{:p}.", __func__, total_size, _sendbuff);
     }
 error_group_2:
-    free(_sendbuff);
+#ifdef CUDA_FOUND
+    if (recvbuff_in_device) {
+        if(cudaFreeAsync(_sendbuff,stream) == cudaSuccess) {
+            sync_stream(stream);
+        }
+    } else {
+#endif
+        free(_sendbuff);
+#ifdef CUDA_FOUND
+    }
+#endif
 error_group_1:
     return ret;
 }
 
+// TODO: support GPU
 ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
         ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream) {
     // TODO:
@@ -607,11 +682,13 @@ ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
     return ret;
 }
 
+// TODO: support GPU
 ncclResult_t ncclBcast(void* buff, size_t count, ncclDataType_t datatype,
         int root, ncclComm_t comm, cudaStream_t stream) {
     return ncclBroadcast(buff,buff,count,datatype,root,comm,stream);
 }
 
+// TODO: support GPU
 ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
         ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
     //TODO: stream
@@ -664,7 +741,7 @@ ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
     }
 
     // STEP 3: run ring reduce-scatter
-    ret = algorithm::reduce_scatter_ring(rbuf,workspace,count,datatype,op,comm,
+    ret = algorithm::reduce_scatter_ring(rbuf,workspace,count,datatype,op,comm,stream,
             [world_size](uint32_t orank){return (orank + world_size - 1)%world_size;},
             [world_size](uint32_t nrank){return (nrank + 1)%world_size;});
 
@@ -715,9 +792,9 @@ error_group_1:
     return ret;
 }
 
+// TODO: support GPU
 ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
         ncclDataType_t datatype, ncclComm_t comm, cudaStream_t stream) {
-    //TODO: stream
     VALIDATE_COMM(comm);
     uint32_t my_rank    = dcclGetMyRank(comm);
     void*    slot_base  = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(recvbuff) + sendcount * my_rank * size_of_type(datatype));
@@ -726,11 +803,12 @@ ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcoun
         memcpy(slot_base,sendbuff,sendcount * size_of_type(datatype));
     }
 
-    return  algorithm::all_gather_ring(recvbuff,sendcount,datatype,comm,
+    return  algorithm::all_gather_ring(recvbuff,sendcount,datatype,comm,stream,
                             [](uint32_t r){return r;},
                             [](uint32_t r){return r;});
 }
 
+// TODO: support GPU
 ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
         ncclComm_t comm, cudaStream_t stream) {
     //TODO: stream
@@ -755,9 +833,9 @@ ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatyp
     return ncclSuccess;
 }
 
+// TODO: support GPU
 ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
         ncclComm_t comm, cudaStream_t stream) {
-    //TODO: stream
     VALIDATE_COMM(comm);
     uint32_t my_rank    = dcclGetMyRank(comm);
     if (static_cast<uint32_t>(peer) == my_rank) {
