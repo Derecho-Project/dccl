@@ -8,10 +8,9 @@ target_include_directories(dccl_cli PRIVATE
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
-if (CMAKE_CUDA_COMPILER)
-    target_link_libraries(dccl_cli dccl CUDA::cudart)
-else()
-    target_link_libraries(dccl_cli dccl)
+target_link_libraries(dccl_cli dccl)
+if (CUDA_FOUND)
+    target_link_libraries(dccl_cli CUDA::cudart)
 endif()
 add_dependencies(dccl_cli dccl)
 

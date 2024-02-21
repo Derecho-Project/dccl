@@ -60,18 +60,31 @@ uint32_t dcclGetMyRank(ncclComm_t comm) {
  */
 #define SCRATCHPAD_MAX_SIZE     (1L<<32)
 /**
- * @brief the thread local scratch pad memory
- * The scratch pad memory is pre-registered derecho OOB memory for zero-copy
+ * @brief the thread local host scratch pad memory
+ * The host scratch pad memory is pre-registered derecho OOB memory for zero-copy
  * operations.
  */
-thread_local void*  scratchpad = nullptr;
+thread_local void*  host_scratchpad = nullptr;
 /**
- * @brief the current size of scratchpad memory.
+ * @brief the current size of host scratchpad memory.
  */
-thread_local size_t scratchpad_size = 0L;
+thread_local size_t host_scratchpad_size = 0L;
+
+#ifdef CUDA_FOUND
+/**
+ * @biref the thread local device scratch pad memory
+ * The device scratch pad memory is pre-registered derecho OOB memory for zero-copy
+ * operations.
+ */
+thread_local void*  device_scratchpad = nullptr;
+/**
+ * @brief the current size of device scratchpad memory.
+ */
+thread_local size_t device_scratchpad_size = 0L;
+#endif
 
 /**
- * @brief Make sure the scratch pad is big enough.
+ * @brief Make sure the host scratch pad is big enough.
  * This function will go through the following process:
  *
  * - If the requested scratchpad size is bigger than `SCRATCHPAD_MAX_SIZE`, throw an exception.
@@ -86,22 +99,22 @@ thread_local size_t scratchpad_size = 0L;
  *
  * @return      error code
  */
-static ncclResult_t verify_scratchpad(size_t size, ncclComm_t comm) {
+static ncclResult_t verify_host_scratchpad(size_t size, ncclComm_t comm) {
     ncclResult_t ret = ncclSuccess;
 
     if (size > SCRATCHPAD_MAX_SIZE) {
-        dccl_error("{}: Unable to allocate a scratchpad of {} Bytes, which is bigger than {} Bytes. "
+        dccl_error("{}: Unable to allocate a host scratchpad of {} Bytes, which is bigger than {} Bytes. "
                    "See {}:{}",
                    __func__, size, SCRATCHPAD_MAX_SIZE, __FILE__, __LINE__);
         return ncclInvalidArgument;
     }
 
-    size_t new_size = (scratchpad_size < size) ?
+    size_t new_size = (host_scratchpad_size < size) ?
         ((size<=SCRATCHPAD_INI_SIZE)? SCRATCHPAD_INI_SIZE : ((size + getpagesize() - 1) & ~(getpagesize()-1))) : 0;
 
     if (new_size > 0) {
-        if (scratchpad_size > 0) {
-            ret = dcclDeregisterCacheMemory(comm, scratchpad, scratchpad_size);
+        if (host_scratchpad_size > 0) {
+            ret = dcclDeregisterCacheMemory(comm, host_scratchpad, host_scratchpad_size);
             if (ret != ncclSuccess) {
                 dccl_error("{} is unable to deregister existing scratchpad. "
                            "See {}:{}",
@@ -109,32 +122,108 @@ static ncclResult_t verify_scratchpad(size_t size, ncclComm_t comm) {
                 return ret;
             }
 
-            free(scratchpad);
-            scratchpad_size = 0;
+            free(host_scratchpad);
+            host_scratchpad_size = 0;
         }
 
-        if(posix_memalign(&scratchpad,CACHELINE_SIZE,new_size) != 0) {
+        if(posix_memalign(&host_scratchpad,CACHELINE_SIZE,new_size) != 0) {
             dccl_error("{} is unable to allocate memory of size {}, error = {}, See {}:{}",
                         __func__, new_size, strerror(errno), __FILE__, __LINE__);
             return ncclSystemError;
         }
-        scratchpad_size = new_size;
+        host_scratchpad_size = new_size;
 
-        ret = dcclRegisterCacheMemory(comm, scratchpad, new_size);
+        ret = dcclRegisterCacheMemory(comm, host_scratchpad, new_size);
         if (ret != ncclSuccess) {
-            free(scratchpad);
-            scratchpad_size = 0;
-            dccl_error("{} is unable to register scratchpad with size {}. "
+            free(host_scratchpad);
+            host_scratchpad_size = 0;
+            dccl_error("{} is unable to register host scratchpad with size {}. "
                        "See {}:{}",
                        __func__, new_size, __FILE__, __LINE__);
             return ret;
         }
 
-        scratchpad_size = new_size;
+        host_scratchpad_size = new_size;
     }
 
     return ret;
 }
+
+#ifdef CUDA_FOUND
+/**
+ * @brief Make sure the device scratch pad is big enough.
+ * This function will go through the following process:
+ *
+ * - If the requested scratchpad size is bigger than `SCRATCHPAD_MAX_SIZE`, throw an exception.
+ *
+ * - If the scratchpad is uninitialized or its size is smaller than the requested size, enlarge
+ *   the scratchpad to the smallest page aligned size no less than `max(size,SCRATCHPAD_INI_SIZE)`
+ *
+ * @param[in]   size        The requested scratchpad size.
+ * @param[in]   comm        The DCCL communication object.
+ * @param[in]   stream      The cuda stream
+ *
+ * @throws      std::runtime_error  In case of failure, raise an runtime error.
+ *
+ * @return      error code
+ */
+static ncclResult_t verify_device_scratchpad(size_t size, ncclComm_t comm, cudaStream_t stream) {
+    ncclResult_t ret = ncclSuccess;
+
+    if (size > SCRATCHPAD_MAX_SIZE) {
+        dccl_error("{}: Unable to allocate a device scratchpad of {} Bytes, which is bigger than {} Bytes. "
+                   "See {}:{}",
+                   __func__, size, SCRATCHPAD_MAX_SIZE, __FILE__, __LINE__);
+        return ncclInvalidArgument;
+    }
+
+    size_t new_size = (device_scratchpad_size < size) ?
+        ((size<=SCRATCHPAD_INI_SIZE)? SCRATCHPAD_INI_SIZE : ((size + getpagesize() - 1) & ~(getpagesize()-1))) : 0;
+
+    if (new_size > 0) {
+        if (device_scratchpad_size > 0) {
+            ret = dcclDeregisterCacheMemory(comm, device_scratchpad, device_scratchpad_size);
+            if (ret != ncclSuccess) {
+                dccl_error("{} is unable to deregister existing scratchpad. "
+                           "See {}:{}",
+                           __func__, __FILE__, __LINE__);
+                return ret;
+            }
+
+            if (cudaFreeAsync(device_scratchpad, stream) != cudaSuccess) {
+                dccl_error("{} failed release device scratchpad. See {}:{}", 
+                           __func__, __FILE__, __LINE__);
+                return ncclUnhandledCudaError;
+            }
+            device_scratchpad_size = 0;
+        }
+
+        if (cudaMallocAsync(&device_scratchpad, new_size, stream) != cudaSuccess) {
+            dccl_error("{} is unable to allocate device memory of size{}, See {}:{}",
+                       __func__, new_size, __FILE__, __LINE__);
+        }
+        device_scratchpad_size = new_size;
+
+        ret = dcclRegisterCacheMemory(comm, device_scratchpad, new_size);
+        if (ret != ncclSuccess) {
+            if (cudaFreeAsync(device_scratchpad, stream) != cudaSuccess) {
+                dccl_error("{} failed release device scratchpad. See {}:{}",
+                           __func__, __FILE__, __LINE__);
+                return ncclUnhandledCudaError;
+            };
+            device_scratchpad_size = 0;
+            dccl_error("{} is unable to register device scratchpad with size {}. "
+                       "See {}:{}",
+                       __func__, new_size, __FILE__, __LINE__);
+            return ret;
+        }
+
+        device_scratchpad_size = new_size;
+    }
+
+    return ret;
+}
+#endif
 
 /**
  * @brief   Initialize receive buffer(Deprecated API)
@@ -254,30 +343,92 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     TIMESTAMP(TT_ALLREDUCE_ENTER,my_rank,op);
 
     // STEP 1: test constraints.
-    if (CACHELINE_OFFSET(sendbuff) || CACHELINE_OFFSET(recvbuff)) {
-        dccl_warn("Either sendbuff@{:p} or recvbuff@{:p} is not cacheline ({} bytes) aligned. "
-                  "Possible performance degradation might occur.",
-                  sendbuff, recvbuff, CACHELINE_SIZE);
+#ifdef CUDA_FOUND
+    bool sendbuff_in_device =   is_device_ptr(sendbuff);
+    bool recvbuff_in_device =   is_device_ptr(recvbuff);
+
+    if (sendbuff_in_device != recvbuff_in_device) {
+        ret = ncclInvalidArgument;
+        dccl_error("{} failed because sendbuf({}) and recvbuf({}) are in difference devices",
+                   __func__, sendbuff_in_device, recvbuff_in_device);
+        return ret;
     }
 
-    // STEP 2: check buffer
+    if (recvbuff_in_device) {
+        if (CUDA_L1_CACHELINE_OFFSET(sendbuff) ||
+            CUDA_L1_CACHELINE_OFFSET(recvbuff)) {
+            dccl_warn("Either sendbuff@{:p} or recvbuff@{:p} is not aligned with GPU L1 cacheline ({} bytes). "
+                      "Performance degradation might occur.",
+                      sendbuff, recvbuff, CUDA_L1_CACHELINE_SIZE);
+        }
+        if (CUDA_L2_CACHELINE_OFFSET(sendbuff) ||
+            CUDA_L2_CACHELINE_OFFSET(recvbuff)) {
+            dccl_warn("Either sendbuff@{:p} or recvbuff@{:p} is not aligned with GPU L2 cacheline ({} bytes). "
+                      "Performance degradation might occur.",
+                      sendbuff, recvbuff, CUDA_L2_CACHELINE_SIZE);
+        }
+    } else {
+#endif
+        if (CACHELINE_OFFSET(sendbuff) || CACHELINE_OFFSET(recvbuff)) {
+            dccl_warn("Either sendbuff@{:p} or recvbuff@{:p} is not cacheline ({} bytes) aligned. "
+                      "Performance degradation might occur.",
+                      sendbuff, recvbuff, CACHELINE_SIZE);
+        }
+#ifdef CUDA_FOUND
+    }
+#endif
+
+    // STEP 2: check in-place operation
     if (sendbuff != recvbuff) {
-        memcpy(recvbuff,sendbuff,total_data_size);
+#ifdef  CUDA_FOUND
+        if (recvbuff_in_device) {
+            if ( cudaMemcpyAsync(recvbuff,sendbuff,total_data_size,cudaMemcpyDeviceToDevice,stream) != cudaSuccess ) {
+                dccl_error("{} failed when copy {} bytes sendbuff{:p} to recvbuff{:p}. Error={}",
+                           total_data_size, sendbuff, recvbuff);
+                ret = ncclUnhandledCudaError;
+                return ret;
+            }
+        } else {
+#endif
+            memcpy(recvbuff,sendbuff,total_data_size);
+#ifdef  CUDA_FOUND
+        }
+#endif
     }
     TIMESTAMP(TT_ALLREDUCE_MEMCPY,my_rank,op);
 
+    // STEP 3: run all_reduce operation
     if (hasCustomizedConfKey(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == false ||
         getConfString(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == DCCL_ALLREDUCE_RING) {
 
-        // STEP 3: verify_scratchpad
-        ret = verify_scratchpad(total_data_size/dcclGetWorldSize(comm),comm);
+        // STEP 3.1: verify scratchpad
+#ifdef CUDA_FOUND
+        if (recvbuff_in_device) {
+            ret = verify_device_scratchpad(total_data_size/dcclGetWorldSize(comm),comm,stream);
+        } else {
+#endif
+            ret = verify_host_scratchpad(total_data_size/dcclGetWorldSize(comm),comm);
+#ifdef CUDA_FOUND
+        }
+#endif
         if (ret != ncclSuccess) {
             dccl_error("{} failed to verify scratchpad memory with size {}",
                        __func__, total_data_size/dcclGetWorldSize(comm));
             return ret;
         }
-    
-        ret = algorithm::all_reduce_ring(recvbuff,scratchpad,count,datatype,op,comm);
+        // STEP 3.2: sync memory operations
+#ifdef CUDA_FOUND
+        if (recvbuff_in_device) {
+            if (sync_stream(stream) != cudaSuccess) {
+                ret = ncclUnhandledCudaError;
+                dccl_error("{} failed synchronize stream. See {}:{}",
+                           __func__, __FILE__, __LINE__);
+                return ret;
+            }
+        }
+#endif
+        // STEP 3.3: ring algorithm
+        ret = algorithm::all_reduce_ring(recvbuff,host_scratchpad,count,datatype,op,comm);
         if (ret != ncclSuccess) {
             dccl_error("{}: all_reduce_ring() failed.",
                        __func__);
@@ -286,15 +437,34 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
 
     } else if (getConfString(DCCL_ALLREDUCE_ALGORITHM_CONFSTR) == DCCL_ALLREDUCE_RABENSEIFNER) {
     
-        // STEP 3: verify_scratchpad
-        ret = verify_scratchpad(total_data_size>>1,comm);
+        // STEP 3.1: verify_scratchpad
+#ifdef CUDA_FOUND
+        if (recvbuff_in_device) {
+            ret = verify_device_scratchpad(total_data_size>>1,comm,stream);
+        } else {
+#endif
+            ret = verify_host_scratchpad(total_data_size>>1,comm);
+#ifdef CUDA_FOUND
+        }
+#endif
         if (ret != ncclSuccess) {
             dccl_error("{} failed to verify scratchpad memory with size {}",
                        __func__, total_data_size>>1);
             return ret;
         }
-    
-        ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,scratchpad,count,datatype,op,comm);
+        // STEP 3.2: sync memory operations
+#ifdef CUDA_FOUND
+        if (recvbuff_in_device) {
+            if (sync_stream(stream) != cudaSuccess) {
+                ret = ncclUnhandledCudaError;
+                dccl_error("{} failed synchronize stream. See {}:{}",
+                           __func__, __FILE__, __LINE__);
+                return ret;
+            }
+        }
+#endif
+        // STEP 3.3: rabenseifner algorithm
+        ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,host_scratchpad,count,datatype,op,comm);
         if (ret != ncclSuccess) {
             dccl_error("{}: all_reduce_recursive_halving_and_doubling() failed.",
                        __func__);
@@ -359,14 +529,14 @@ ncclResult_t ncclReduceScatter(const void*      sendbuffer,
         goto error_group_2;
     }
     memcpy(_sendbuff,sendbuffer,total_size);
-    ret = verify_scratchpad(slot_size,comm);
+    ret = verify_host_scratchpad(slot_size,comm);
     if (ret != ncclSuccess) {
         dccl_error("{}: Failed to verify scratchpad memory with size {}", __func__, slot_size);
         goto error_group_3;
     }
 
     // run reduce scatter
-    ret = algorithm::reduce_scatter_ring(_sendbuff,scratchpad,recvcount*world_size,datatype,op,comm,
+    ret = algorithm::reduce_scatter_ring(_sendbuff,host_scratchpad,recvcount*world_size,datatype,op,comm,
             [world_size](uint32_t orank){return (orank + world_size - 1)%world_size;},
             [world_size](uint32_t nrank){return (nrank + 1)%world_size;});
 
@@ -475,18 +645,18 @@ ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
     void*   rbuf            = nullptr;
     auto    shard_members   = get_dccl_shard_members(comm);
 
-    ret = verify_scratchpad(workspace_size,comm);
+    ret = verify_host_scratchpad(workspace_size,comm);
     if (ret != ncclSuccess) {
         dccl_error("{} failed to verify scratchpad memory with size {}",
                    __func__, slot_size);
         goto error_group_1;
     }
-    workspace = scratchpad;
+    workspace = host_scratchpad;
 
     if (iamroot) {
         rbuf = recvbuff;
     } else { // using the uppermost space in scratchpad.
-        rbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(scratchpad) + slot_size);
+        rbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(host_scratchpad) + slot_size);
     }
 
     if (sendbuff != rbuf) {

@@ -641,4 +641,50 @@ inline void dccl_oob_wait_for_recv(ncclComm_t& comm, node_id_t& fid, uint32_t nu
     }
 }
 
+#ifdef CUDA_FOUND
+/**
+ * @brief test if a pointer is a host pointer or a device pointer.
+ * 
+ * @param[in]   ptr         The pointer to be tested.
+ *
+ * @return      True for device pointer, false for host pointer.
+ */
+inline bool is_device_ptr(const void* ptr) {
+    cudaPointerAttributes attrs;
+    if (cudaPointerGetAttributes(&attrs,ptr) == cudaSuccess) {
+        switch(attrs.type) {
+        case cudaMemoryTypeUnregistered:
+        case cudaMemoryTypeHost:
+            return false;
+        case cudaMemoryTypeDevice:
+        case cudaMemoryTypeManaged:
+            return true;
+        default:
+            break;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Synchronize with a stream
+ *
+ * @param[in]   stream      The cuda stream to synchronize.
+ *
+ * @return      error code
+ */
+inline cudaError_t sync_stream(cudaStream_t stream) {
+    cudaEvent_t evt;
+    cudaError_t err = cudaEventCreate(&evt);
+    if (err != cudaSuccess) {
+        return err;
+    }
+    err = cudaEventRecord(evt, stream);
+    if (err != cudaSuccess) {
+        return err;
+    }
+    return cudaEventSynchronize(evt);
+}
+#endif
+
 } // namespace dccl

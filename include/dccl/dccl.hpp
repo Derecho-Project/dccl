@@ -438,6 +438,24 @@ ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int
 #define CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CACHELINE_SIZE)
 
 /**
+ * @brief Test the offset of an address in GPU's L1 cacheline.
+ *
+ * @param[in]   addr        Some address of any pointer type
+ *
+ * @return      The offset of `addr` in GPU's L1 cacheline.
+ */
+#define CUDA_L1_CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CUDA_L1_CACHELINE_SIZE)
+
+/**
+ * @brief Test the offset of an address in GPU's L2 cacheline.
+ *
+ * @param[in]   addr        Some address of any pointer type
+ *
+ * @return      The offset of `addr` in GPU's L2 cacheline.
+ */
+#define CUDA_L2_CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CUDA_L2_CACHELINE_SIZE)
+
+/**
  * @brief Get the world size
  *
  * @param[in]   comm            The DCCL communication object.

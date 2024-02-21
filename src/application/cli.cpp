@@ -13,7 +13,6 @@
 
 #if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI)
 //TODO: find a better way to determine CUDA L1 cache line size
-#define CUDA_L1_CACHELINE_SIZE  (128)
 #define ASSERTRT(stmt) \
     do { \
         cudaError_t err = (stmt); \

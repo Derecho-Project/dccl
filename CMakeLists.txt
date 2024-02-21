@@ -70,6 +70,8 @@ if (CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
     find_package(CUDAToolkit)
     set( CUDA_FOUND 1 )
+    set( CUDA_L1_CACHELINE_SIZE 128 )
+    set( CUDA_L2_CACHELINE_SIZE 32 )
 
     if (NOT DEFINED CMAKE_CUDA_STANDARD)
         set(CMAKE_CUDA_STANDARD 17)
@@ -111,6 +113,11 @@ target_link_libraries(dccl
     OpenSSL::Crypto
     ${mutils_LIBRARIES}
 )
+if(CUDA_FOUND)
+target_link_libraries(dccl
+    CUDA::cudart
+)
+endif()
 add_dependencies(dccl core utils)
 
 add_subdirectory(src/application)
