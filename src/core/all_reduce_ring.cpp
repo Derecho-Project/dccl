@@ -18,13 +18,34 @@ ncclResult_t all_reduce_ring(
     uint32_t        world_size =    dcclGetWorldSize(comm);
     auto            shard_members  = get_dccl_shard_members(comm);
 
-    // STEP 1 check contraints
-    if (CACHELINE_OFFSET(buffer)) {
-        dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
-                  "Possible performance degradation might occur.",
-                  buffer, CACHELINE_SIZE);
+#ifdef CUDA_FOUND
+    bool            in_device = is_device_ptr(buffer);
+#endif // CUDA_FOUND
 
+    // STEP 1 check contraints
+#ifdef CUDA_FOUND
+    if (in_device) {
+        if (CUDA_L1_CACHELINE_OFFSET(buffer)) {
+            dccl_warn("The buffer @{:p} is not cacheline ({}bytes) aligned. "
+                      "Performance degradation might occur.",
+                      buffer, CUDA_L1_CACHELINE_SIZE);
+        }
+        if (CUDA_L2_CACHELINE_OFFSET(buffer)) {
+            dccl_warn("The buffer @{:p} is not cacheline ({}bytes) aligned. "
+                      "Performance degradation might occur.",
+                      buffer, CUDA_L2_CACHELINE_SIZE);
+        }
+    } else {
+#endif
+        if (CACHELINE_OFFSET(buffer)) {
+            dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
+                      "Performance degradation might occur.",
+                      buffer, CACHELINE_SIZE);
+    
+        }
+#ifdef CUDA_FOUND
     }
+#endif
 
     // TODO: the latter constrain can be lifted.
     if (count < world_size || count % world_size) {

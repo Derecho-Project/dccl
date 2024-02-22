@@ -433,7 +433,7 @@ inline IntegerType log_two(IntegerType n) {
 }
 
 /**
- * @brief Perform a local reduce
+ * @brief Perform a local reduce with CPU
  * This is an optimized reduce operation on two local buffers.
  * It performs the following operation:
  *
@@ -450,10 +450,10 @@ inline IntegerType log_two(IntegerType n) {
  * @return          Error Code
  */
 template<typename DT>
-ncclResult_t do_reduce(const void*  sendbuf,
-                       void*        recvbuf,
-                       size_t       count,
-                       ncclRedOp_t  op) {
+ncclResult_t do_host_reduce(const void*  sendbuf,
+                            void*        recvbuf,
+                            size_t       count,
+                            ncclRedOp_t  op) {
     const DT*   psend = static_cast<const DT*>(sendbuf);
     DT*         precv = static_cast<DT*>(recvbuf);
 
@@ -540,6 +540,36 @@ ncclResult_t do_reduce(const void*  sendbuf,
     }
     return ncclSuccess;
 }
+
+#ifdef CUDA_FOUND
+/**
+ * @brief Perform a local reduce with GPU
+ * This is an optimized reduce operation on two local buffers.
+ * It performs the following operation:
+ *
+ * `recvbuf[i] = op(recvbuf[i],senddat[i])`
+ *
+ * , for `i` in `[0, count)`.
+ *
+ * @tparam          DT          The type of the data.
+ * @param[in]       sendbuf     List of operand 1.
+ * @param[in,out]   recvbuf     List of operand 2, also used to receive the reduced results.
+ * @param[in]       count       The number of data entries in the algorithm.
+ * @param[in]       op          The reduce operation.
+ * @param[in]       stream      The CUDA stream
+ *
+ * @return          Error Code
+ */
+template<typename DT>
+ncclResult_t do_device_reduce(const void*   sendbuf,
+                              void*         recvbuf,
+                              size_t        count,
+                              ncclRedOp_t   op,
+                              cudaStream_t  stream) {
+    // TODO:
+    return ncclSuccess;
+}
+#endif//CUDA_FOUND
 
 /**
  * @brief max message size

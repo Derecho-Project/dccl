@@ -266,7 +266,7 @@ ncclResult_t DCCLSubgroupType::reduce(const Blob& sendbuf, const size_t count, n
 
     void* rbuf = this->recvbuf.load();
     ret = ncclInvalidArgument;
-    ON_DCCL_DATATYPE(datatype,ret=do_reduce,sendbuf.bytes,rbuf,count,op);
+    ON_DCCL_DATATYPE(datatype,ret=do_host_reduce,sendbuf.bytes,rbuf,count,op);
     return ret;
 }
 

@@ -22,13 +22,33 @@ ncclResult_t reduce_scatter_ring(
     size_t          data_slot_size = total_data_size/world_size;
     auto            shard_members  = get_dccl_shard_members(comm);
 
-    // STEP 1 check contraints
-    if (CACHELINE_OFFSET(buffer)) {
-        dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
-                  "Possible performance degradation might occur.",
-                  buffer, CACHELINE_SIZE);
-    }
+#ifdef  CUDA_FOUND
+    bool            is_in_device = is_device_ptr(buffer);
+#endif
 
+    // STEP 1 check contraints
+#ifdef  CUDA_FOUND
+    if (is_in_device) {
+        if (CUDA_L1_CACHELINE_OFFSET(buffer)) {
+            dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
+                      "Performance degradation might occur.",
+                      buffer, CUDA_L1_CACHELINE_SIZE);
+        }
+        if (CUDA_L2_CACHELINE_OFFSET(buffer)) {
+            dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
+                      "Performance degradation might occur.",
+                      buffer, CUDA_L2_CACHELINE_SIZE);
+        }
+    } else {
+#endif // CUDA_FOUND
+        if (CACHELINE_OFFSET(buffer)) {
+            dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
+                      "Possible performance degradation might occur.",
+                      buffer, CACHELINE_SIZE);
+        }
+#ifdef  CUDA_FOUND
+    }
+#endif // CUDA_FOUND
     // TODO: the latter constrain can be lifted.
     if (count < world_size || count % world_size) {
         dccl_error("Entry count {} cannot be distributed evenly among {} nodes.",
@@ -58,24 +78,22 @@ ncclResult_t reduce_scatter_ring(
         // 2.3 - wait
         dccl_oob_wait_for_send(comm,to_id,s_chunks);
         dccl_oob_wait_for_recv(comm,from_id,r_chunks);
-        /*
-        // 2.1 - send dat[r-s] to rank r+1
-        struct iovec siov,riov;
-        siov.iov_base   = __DATA__(my_rank - s);
-        siov.iov_len    = data_slot_size;
-        // 2.2 - recv dat[r-s-1] from rank r-1
-        riov.iov_base   = scratchpad;
-        riov.iov_len    = data_slot_size;
-        SUBGROUP_HANDLE(comm).oob_send(to_id,&siov,1);
-        SUBGROUP_HANDLE(comm).oob_recv(from_id,&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(to_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(from_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
-        */
-        // 2.3 - do reduce...
-        ON_DCCL_DATATYPE(datatype,
-                         ret=do_reduce,
-                         scratchpad,__DATA__(my_rank - s - 1),
-                         count/world_size,op);
+        // 2.4 - do reduce
+#ifdef CUDA_FOUND
+        if (is_in_device) {
+            ON_DCCL_DATATYPE(datatype,
+                             ret=do_device_reduce,
+                             scratchpad,__DATA__(my_rank - s - 1),
+                             count/world_size,op,stream);
+        } else {
+#endif
+            ON_DCCL_DATATYPE(datatype,
+                             ret=do_host_reduce,
+                             scratchpad,__DATA__(my_rank - s - 1),
+                             count/world_size,op);
+#ifdef CUDA_FOUND
+        }
+#endif
         if (ret != ncclSuccess) {
             return ret;
         }

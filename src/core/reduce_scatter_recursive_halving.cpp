@@ -23,12 +23,18 @@ ncclResult_t reduce_scatter_recursive_halving(
     ncclResult_t ret = ncclSuccess;
 
     dccl_trace("{}: STEP 1: testing constraints.", __func__);
-
-    if (CACHELINE_OFFSET(buffer) != 0 || CACHELINE_OFFSET(scratchpad)) {
-        dccl_warn("Function {} got CL-unaligned buffer@{:p} or scratchpad@{:p}. Performance might be compromised."
-                  " See {}:{}.",
-                  __func__,buffer,scratchpad,__FILE__,__LINE__);
+#ifdef CUDA_FOUND
+    bool  is_in_device = is_device_ptr(buffer);
+    if (!is_in_device) {
+#endif
+        if (CACHELINE_OFFSET(buffer) != 0 || CACHELINE_OFFSET(scratchpad)) {
+            dccl_warn("Function {} got CL-unaligned buffer@{:p} or scratchpad@{:p}. Performance might be compromised."
+                      " See {}:{}.",
+                      __func__,buffer,scratchpad,__FILE__,__LINE__);
+        }
+#ifdef CUDA_FOUND
     }
+#endif
     assert(subworld_size <= dcclGetWorldSize(comm));
     assert(IS_POWER_OF_TWO(subworld_size));
     const uint32_t exponent = log_two(subworld_size);
@@ -80,25 +86,22 @@ ncclResult_t reduce_scatter_recursive_halving(
         dccl_oob_wait_for_send(comm,peer_id,s_chunks);
         dccl_oob_wait_for_recv(comm,peer_id,r_chunks);
 
-        /*****
-        struct iovec siov,riov;
-        siov.iov_base   = send_buffer;
-        siov.iov_len    = step_bsize;
-        riov.iov_base   = scratchpad;
-        riov.iov_len    = step_bsize;
-        SUBGROUP_HANDLE(comm).oob_send(shard_members.at(to_old_rank(peer_rank)),&siov,1);
-        SUBGROUP_HANDLE(comm).oob_recv(shard_members.at(to_old_rank(peer_rank)),&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
-        *****/
-        // TODO: optimization opportunities here: we can wait OOB_OP_RECV first and then do reduce. But currently, 
-        // the wait_for_oob_op needs improved to distinguish OOB_OP_RECV and OOB_OP_SEND.
-
         // do reduce...
-        ON_DCCL_DATATYPE(datatype,
-                         ret=do_reduce,
-                         scratchpad,recv_buffer,
-                         step_bsize/size_of_type(datatype),op);
+#ifdef CUDA_FOUND
+        if (is_in_device) {
+            ON_DCCL_DATATYPE(datatype,
+                             ret=do_device_reduce,
+                             scratchpad,recv_buffer,
+                             step_bsize/size_of_type(datatype),op,stream);
+        } else {
+#endif // CUDA_FOUND
+            ON_DCCL_DATATYPE(datatype,
+                             ret=do_host_reduce,
+                             scratchpad,recv_buffer,
+                             step_bsize/size_of_type(datatype),op);
+#ifdef CUDA_FOUND
+        }
+#endif // CUDA_FOUND
         if (ret != ncclSuccess) {
             break;
         }
