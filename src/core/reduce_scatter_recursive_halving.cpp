@@ -93,6 +93,9 @@ ncclResult_t reduce_scatter_recursive_halving(
                              ret=do_device_reduce,
                              scratchpad,recv_buffer,
                              step_bsize/size_of_type(datatype),op,stream);
+            if (ret == ncclSuccess) {
+                ret = (sync_stream(stream) == cudaSuccess)?ncclSuccess:ncclUnhandledCudaError;
+            }
         } else {
 #endif // CUDA_FOUND
             ON_DCCL_DATATYPE(datatype,

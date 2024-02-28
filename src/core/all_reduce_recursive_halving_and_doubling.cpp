@@ -88,6 +88,9 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
                              ret=do_device_reduce,
                              scratchpad,buffer,
                              count>>1,op,stream);
+            if (ret == ncclSuccess) {
+                ret = (sync_stream(stream) == cudaSuccess)? ncclSuccess:ncclUnhandledCudaError;
+            }
         } else {
 #endif
             ON_DCCL_DATATYPE(datatype,
@@ -123,6 +126,9 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
                              ret=do_device_reduce,
                              scratchpad,reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer)+(total_data_size>>1)),
                              count>>1,op,stream);
+            if (ret == ncclSuccess) {
+                ret = (sync_stream(stream) == cudaSuccess)? ncclSuccess:ncclUnhandledCudaError;
+            }
         } else {
 #endif
             ON_DCCL_DATATYPE(datatype,
