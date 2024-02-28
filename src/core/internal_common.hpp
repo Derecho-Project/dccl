@@ -1,5 +1,6 @@
 #pragma once
 
+#ifndef NVCC_VISIBLE
 /**
  * @file    internal_common.hpp
  * @brief   Internal utilities (types, macros, and functions) which be hidden from DCCL API users.
@@ -9,10 +10,18 @@
  */
 #include <atomic>
 #include <derecho/core/derecho.hpp>
+#endif//!NVCC_VISIBLE
+
 #include <dccl/dccl.hpp>
+
+#ifndef NVCC_VISIBLE
 #include "blob.hpp"
 #include <mutex>
 #include <condition_variable>
+
+#ifdef  CUDA_FOUND
+#include <cuda_fp16.h>
+#endif//CUDA_FOUND
 
 using namespace derecho;
 
@@ -364,6 +373,8 @@ inline size_t size_of_type(ncclDataType_t datatype) {
         expr<double>(__VA_ARGS__); \
         break; \
     case ncclFloat16: \
+        expr<half>(__VA_ARGS__); \
+        break; \
     default: \
         break; \
     }
@@ -540,7 +551,44 @@ ncclResult_t do_host_reduce(const void*  sendbuf,
     }
     return ncclSuccess;
 }
+} // namespace dccl
+#endif // !NVCC_VISIBLE
 
+
+#ifdef CUDA_FOUND
+namespace dccl {
+
+/**
+ * @brief Perform a local reduce with GPU
+ * This is an optimized reduce operation on two local buffers.
+ * It performs the following operation:
+ *
+ * `recvbuf[i] = op(recvbuf[i],senddat[i])`
+ *
+ * , for `i` in `[0, count)`.
+ * This is implemented as a cuda kernel.
+ *
+ * @param[in]       sendbuf     List of operand 1.
+ * @param[in,out]   recvbuf     List of operand 2, also used to receive the reduced results.
+ * @param[in]       dtype       The type of the data elements.
+ * @param[in]       count       The number of data entries in the algorithm.
+ * @param[in]       op          The reduce operation.
+ * @param[in]       stream      The CUDA stream
+ *
+ * @return          Error Code
+ */
+ncclResult_t do_device_reduce(const void*       sendbuf,
+                              void*             recvbuf,
+                              ncclDataType_t    dtype,
+                              size_t            count,
+                              ncclRedOp_t       op,
+                              cudaStream_t      stream);
+
+} // namespace dccl
+#endif // CUDA_FOUND
+
+#ifndef NVCC_VISIBLE
+namespace dccl {
 #ifdef CUDA_FOUND
 /**
  * @brief Perform a local reduce with GPU
@@ -566,8 +614,47 @@ ncclResult_t do_device_reduce(const void*   sendbuf,
                               size_t        count,
                               ncclRedOp_t   op,
                               cudaStream_t  stream) {
-    // TODO:
-    return ncclSuccess;
+
+    if constexpr (std::is_same_v<DT,int8_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclInt8,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,uint8_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclUint8,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,int32_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclInt32,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,uint32_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclUint32,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,int64_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclInt64,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,uint64_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclUint64,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,float>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclFloat32,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,double>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclFloat64,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,half>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclFloat16,count,op,stream);
+    }
+
+    dccl_error("{} failed with unknown Datatype: {}", __func__, typeid(DT).name());
+
+    return ncclInvalidArgument;
+
 }
 #endif//CUDA_FOUND
 
@@ -715,6 +802,8 @@ inline cudaError_t sync_stream(cudaStream_t stream) {
     }
     return cudaEventSynchronize(evt);
 }
-#endif
+#endif // CUDA_FOUND
 
 } // namespace dccl
+
+#endif // !NVCC_VISIBLE

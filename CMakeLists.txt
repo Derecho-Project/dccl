@@ -104,9 +104,16 @@ CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DI
 add_subdirectory(src/core)
 add_subdirectory(src/utils)
 
+if(CUDA_FOUND)
+add_library(dccl SHARED
+    $<TARGET_OBJECTS:core>
+    $<TARGET_OBJECTS:cureduce>
+)
+else()
 add_library(dccl SHARED
     $<TARGET_OBJECTS:core>
 )
+endif()
 target_link_libraries(dccl 
     derecho
     spdlog::spdlog
