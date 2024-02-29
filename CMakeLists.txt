@@ -79,7 +79,7 @@ if (CMAKE_CUDA_COMPILER)
     endif()
     
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-        execute_process(COMMAND bash -c "nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits | sed 's/\\.//'"
+        execute_process(COMMAND bash -c "nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits | sed 's/\\.//' | head -1 "
                         OUTPUT_VARIABLE NATIVE_CUDA_ARCH)
         string(STRIP ${NATIVE_CUDA_ARCH} NATIVE_CUDA_ARCH)
         set(CMAKE_CUDA_ARCHITECTURES ${NATIVE_CUDA_ARCH})
