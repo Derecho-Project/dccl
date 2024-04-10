@@ -346,6 +346,7 @@ inline size_t size_of_type(ncclDataType_t datatype) {
  * @param[in]   expr            The expression suffixed with `<data type>`, like `<int32_t>`
  * @param[in]   ...             the arguments passed to `expr<data type>()`
  */
+#ifdef CUDA_FOUND
 #define ON_DCCL_DATATYPE(datatype, expr, ... ) \
     switch (datatype) { \
     case ncclInt8: \
@@ -378,6 +379,37 @@ inline size_t size_of_type(ncclDataType_t datatype) {
     default: \
         break; \
     }
+#else // !CUDA_FOUND
+#define ON_DCCL_DATATYPE(datatype, expr, ... ) \
+    switch (datatype) { \
+    case ncclInt8: \
+        expr<int8_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint8: \
+        expr<uint8_t>(__VA_ARGS__); \
+        break; \
+    case ncclInt32: \
+        expr<int32_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint32: \
+        expr<uint32_t>(__VA_ARGS__); \
+        break; \
+    case ncclInt64: \
+        expr<int64_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint64: \
+        expr<uint64_t>(__VA_ARGS__); \
+        break; \
+    case ncclFloat32: \
+        expr<float>(__VA_ARGS__); \
+        break; \
+    case ncclFloat64: \
+        expr<double>(__VA_ARGS__); \
+        break; \
+    default: \
+        break; \
+    }
+#endif // CUDA_FOUND
 
 /**
  * @brief Reverse the least significants bits of an integer.

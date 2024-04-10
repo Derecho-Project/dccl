@@ -335,6 +335,8 @@ int main(int argc, char** argv) {
     cudaStream_t stream = static_cast<cudaStream_t>(nullptr);
 
     if (gpu < 0) { // HOST Memory
+#else
+    cudaStream_t stream = nullptr;
 #endif//CUDA_FOUND
         if (posix_memalign(&dccl_sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
             posix_memalign(&dccl_recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
@@ -380,7 +382,7 @@ int main(int argc, char** argv) {
             return 2; \
         } \
     }
-#else
+#else // !__BUILD_FOR_OMPI__
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
         if (api == "all_reduce") { \
@@ -415,6 +417,8 @@ int main(int argc, char** argv) {
         } \
     }
 
+#if CUDA_FOUND
+    // TODO:
     // The memory should be registered with dccl before passing to dccl APIs.
     if (dcclRegisterCacheMemory(comm,sendbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
         std::cerr << "Failed to register sendbuf@" << sendbuf << "to dccl." << std::endl;
@@ -424,6 +428,17 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
         return 1;
     }
+#else   //!CUDA_FOUND
+    // The memory should be registered with dccl before passing to dccl APIs.
+    if (dcclRegisterCacheMemory(comm,sendbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
+        std::cerr << "Failed to register sendbuf@" << sendbuf << "to dccl." << std::endl;
+        return 1;
+    }
+    if (dcclRegisterCacheMemory(comm,recvbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
+        std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
+        return 1;
+    }
+#endif
 
 #endif//__BUILD_FOR_OMPI__
 
