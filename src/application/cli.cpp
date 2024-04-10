@@ -417,7 +417,7 @@ int main(int argc, char** argv) {
         } \
     }
 
-#if CUDA_FOUND
+#if defined(CUDA_FOUND)
     // TODO:
     // The memory should be registered with dccl before passing to dccl APIs.
     if (dcclRegisterCacheMemory(comm,sendbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
