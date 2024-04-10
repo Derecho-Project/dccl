@@ -417,8 +417,6 @@ int main(int argc, char** argv) {
         } \
     }
 
-#if defined(CUDA_FOUND)
-    // TODO:
     // The memory should be registered with dccl before passing to dccl APIs.
     if (dcclRegisterCacheMemory(comm,sendbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
         std::cerr << "Failed to register sendbuf@" << sendbuf << "to dccl." << std::endl;
@@ -428,17 +426,6 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
         return 1;
     }
-#else   //!CUDA_FOUND
-    // The memory should be registered with dccl before passing to dccl APIs.
-    if (dcclRegisterCacheMemory(comm,sendbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
-        std::cerr << "Failed to register sendbuf@" << sendbuf << "to dccl." << std::endl;
-        return 1;
-    }
-    if (dcclRegisterCacheMemory(comm,recvbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
-        std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
-        return 1;
-    }
-#endif
 
 #endif//__BUILD_FOR_OMPI__
 

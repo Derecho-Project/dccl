@@ -834,6 +834,39 @@ inline cudaError_t sync_stream(cudaStream_t stream) {
     }
     return cudaEventSynchronize(evt);
 }
+
+/**
+ * @brief get the device id from the stream
+ * We don't need it yet...
+ *
+ * @param[in]   stream      The cuda stream
+ *
+ * @return      device number -1 for error
+ *
+inline int get_device_by_stream(cudaStream_t stream) {
+    CUresult    err;
+    CUcontext   ctx;
+    CUdevice    device;
+    if ((err = cuStreamGetCtx(stream,&ctx)) != CUDA_SUCCESS) {
+        dccl_error("{} cuStreamGetCtx(stream,&ctx) failed with error {}.", __func__, err);
+        return -1;
+    }
+    if ((err = cuCtxPushCurrent (ctx)) != CUDA_SUCCESS) {
+        dccl_error("{} cuCtxPushCurrent(ctx) failed with error {}.", __func__, err);
+        return -1;
+    }
+    if ((err = cuGetDevice(&device)) != CUDA_SUCCESS) {
+        dccl_error("{} cuGetDevice(&device) failed with error {}.", __func__, err);
+        cuCtxPopCurrent(&ctx);
+        return -1;
+    }
+    if ((err = cuCtxPopCurrent(&ctx)) != CUDA_SUCCESS) {
+        dccl_error("{} cuCtxPopCurrent(&ctx) failed with error {}.", __func__, err);
+    }
+    return static_cast<int>(device);
+}
+*/
+
 #endif // CUDA_FOUND
 
 } // namespace dccl
