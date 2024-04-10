@@ -55,9 +55,9 @@ public:
 
 static int oob_perf(
 #ifdef CUDA_FOUND
-                    int32_t 	cuda_dev,
+                    int32_t     cuda_dev,
 #endif
-		            size_t      size_byte,
+                    size_t      size_byte,
                     size_t      depth,
                     uint32_t    warmup_sec,
                     uint32_t    duration_sec) {
@@ -75,7 +75,7 @@ static int oob_perf(
     // STEP 2: prepare memory pool
     size_t pool_size    = (size_byte*depth + 4095)/4096*4096;
     void*  pool_ptr;
-#ifdef	CUDA_FOUND
+#ifdef CUDA_FOUND
     CUdevice    cuda_device;
     CUcontext   cuda_context;
     if (cuda_dev >= 0) {
@@ -93,7 +93,7 @@ static int oob_perf(
         ASSERTDRV(cuDevicePrimaryCtxRetain(&cuda_context, cuda_device));
         ASSERTDRV(cuCtxSetCurrent(cuda_context));
 
-	    int rc = cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&pool_ptr),pool_size);
+        int rc = cuMemAlloc(reinterpret_cast<CUdeviceptr*>(&pool_ptr),pool_size);
         if ( rc != CUDA_SUCCESS ) {
             std::cerr << "Failed to allocate cuda memory. cuMemAlloc() returns " << rc << std::endl;
             return -1;
@@ -312,7 +312,7 @@ int main(int argc, char** argv) {
     static struct option long_options[] = {
         {"transport",   required_argument,  0,  't'},
 #ifdef	CUDA_FOUND
-	{"cuda",        required_argument,  0,  'c'},
+    {"cuda",        required_argument,  0,  'c'},
 #endif
         {"size",        required_argument,  0,  's'},
         {"depth",       required_argument,  0,  'd'},
@@ -345,10 +345,10 @@ int main(int argc, char** argv) {
         case 't':
             transport = optarg;
             break;
-#ifdef	CUDA_FOUND
-	    case 'c':
-	        cuda_dev = std::stol(optarg);
-	        break;
+#ifdef CUDA_FOUND
+        case 'c':
+            cuda_dev = std::stol(optarg);
+            break;
 #endif
         case 's':
             size_byte = std::stol(optarg);
@@ -395,9 +395,9 @@ int main(int argc, char** argv) {
     if (transport == "oob") {
         ret = oob_perf(
 #ifdef CUDA_FOUND
-                       cuda_dev,
+                        cuda_dev,
 #endif
-		       size_byte,depth,warmup_sec,duration_sec);
+                        size_byte,depth,warmup_sec,duration_sec);
     } else {
         std::cerr << "'" << transport << "' support is under construction." << std::endl;
         return 3;
