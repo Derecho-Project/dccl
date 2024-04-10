@@ -204,6 +204,11 @@ static ncclResult_t verify_device_scratchpad(size_t size, ncclComm_t comm, cudaS
         }
         device_scratchpad_size = new_size;
 
+        if (sync_stream(stream) != cudaSuccess) {
+            dccl_error("{} failed to sync stream. See{}:{}",__func__, __FILE__, __LINE__);
+            return ncclUnhandledCudaError;
+        }
+
         ret = dcclRegisterCacheMemory(comm, device_scratchpad, new_size);
         if (ret != ncclSuccess) {
             if (cudaFreeAsync(device_scratchpad, stream) != cudaSuccess) {
