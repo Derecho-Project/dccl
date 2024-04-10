@@ -120,6 +120,14 @@ static int oob_perf(
 #ifdef CUDA_FOUND
     }
 #endif
+    derecho::memory_attribute_t attr;
+    attr.type = derecho::memory_attribute_t::SYSTEM;
+#ifdef CUDA_FOUND
+    if (cuda_dev >= 0) {
+        attr.type = derecho::memory_attribute_t::CUDA;
+        attr.device.cuda = cuda_dev;
+    }
+#endif
     g.register_oob_memory(pool_ptr,pool_size);
     std::cout << pool_size << " bytes are registered as OOB cache." << std::endl;
 
