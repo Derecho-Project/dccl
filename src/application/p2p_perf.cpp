@@ -128,7 +128,7 @@ static int oob_perf(
         attr.device.cuda = cuda_dev;
     }
 #endif
-    g.register_oob_memory(pool_ptr,pool_size);
+    g.register_oob_memory_ex(pool_ptr,pool_size,attr);
     std::cout << pool_size << " bytes are registered as OOB cache." << std::endl;
 
     // STEP 3.0: get peer id.
