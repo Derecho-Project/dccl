@@ -259,14 +259,15 @@ static int oob_perf(
                     npost ++;
                 }
             } else {
-#else
+#endif
                 if (*static_cast<uint8_t*>(__BUF_PTR__(pool_ptr,size_byte,depth,nrecv)) != 0xFF) {
                     riov.iov_base = __BUF_PTR__(pool_ptr,size_byte,depth,npost);
                     OOB_RECV(peer_id,&riov,1);
                     npost ++;
                 }
-#endif
+#ifdef CUDA_FOUND
             }
+#endif
             nrecv ++;
         }
         // done.
