@@ -477,7 +477,11 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
     return ret;
 }
 
-ncclResult_t dcclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size) {
+ncclResult_t dcclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size
+#if defined(CUDA_FOUND)
+                                     ,int device
+#endif
+        ) {
     VALIDATE_COMM(comm);
 
     if (CACHELINE_OFFSET(buffer) != 0) {
@@ -489,8 +493,19 @@ ncclResult_t dcclRegisterCacheMemory(ncclComm_t comm, void* buffer, size_t size)
         dccl_error("{}: buffer size {} is not cacheline aligned.", __func__, size);
         return ncclInvalidArgument;
     }
+    derecho::memory_attribute_t attr;
+#if defined(CUDA_FOUND)
+    if (device<0) {
+#endif
+        attr.type = derecho::memory_attribute_t::SYSTEM;
+#if defined(CUDA_FOUND)
+    } else {
+        attr.type = derecho::memory_attribute_t::CUDA;
+        attr.device.cuda = device;
+    }
+#endif
 
-    GROUP_HANDLE(comm)->register_oob_memory(buffer,size);
+    GROUP_HANDLE(comm)->register_oob_memory_ex(buffer,size,attr);
     return ncclSuccess;
 }
 
