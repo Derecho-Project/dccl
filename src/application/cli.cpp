@@ -224,7 +224,7 @@ int main(int argc, char** argv) {
 
     while (true) {
         int option_index = 0;
-        c = getopt_long(argc,argv, "a:g:w:r:t:o:c:h", long_options, &option_index);
+        c = getopt_long(argc,argv, "a:g:w:r:t:o:c:sh", long_options, &option_index);
 
         if (c == -1) {
             break;
