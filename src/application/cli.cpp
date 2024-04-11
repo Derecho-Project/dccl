@@ -207,9 +207,9 @@ int main(int argc, char** argv) {
     int c;
 
     std::string api;
-#if !defined(__BUILD_FOR_OMPI__)
+#if !defined(__BUILD_FOR_OMPI__) && defined(CUDA_FOUND)
     int32_t         gpu = -1;
-#endif//!__BUILD_FOR_OMPI__
+#endif//!__BUILD_FOR_OMPI__ && CUDA_FOUND
     size_t          warmup_count = 0;
     size_t          repeat_count = 1000;
 #ifdef __BUILD_FOR_OMPI__
