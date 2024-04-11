@@ -198,16 +198,23 @@ static ncclResult_t verify_device_scratchpad(size_t size, ncclComm_t comm, cudaS
             device_scratchpad_size = 0;
         }
 
-        if (cudaMallocAsync(&device_scratchpad, new_size, stream) != cudaSuccess) {
+        // TODO:    cudaMallocAsync returns a 0x400000000 or 0x300000000 based addresses,
+        //          not like the 0x7ffff... based address returned from cudaMalloc().
+        //          The former does not work with GPUDirect RDMA (ibv_reg_mr).
+        //          WHY????????????????????????????
+        // if (cudaMallocAsync(&device_scratchpad, new_size, stream) != cudaSuccess) {
+        if (cudaMalloc(&device_scratchpad, new_size) != cudaSuccess) {
             dccl_error("{} is unable to allocate device memory of size{}, See {}:{}",
                        __func__, new_size, __FILE__, __LINE__);
         }
         device_scratchpad_size = new_size;
 
+        /**
         if (sync_stream(stream) != cudaSuccess) {
             dccl_error("{} failed to sync stream. See{}:{}",__func__, __FILE__, __LINE__);
             return ncclUnhandledCudaError;
         }
+        **/
 
         ret = dcclRegisterCacheMemory(comm, device_scratchpad, new_size);
         if (ret != ncclSuccess) {
@@ -556,7 +563,8 @@ ncclResult_t ncclReduceScatter(const void*      sendbuff,
         return ret;
     }
     if (recvbuff_in_device) {
-        if (cudaMallocAsync(&_sendbuff,total_size,stream) != cudaSuccess) {
+        //if (cudaMallocAsync(&_sendbuff,total_size,stream) != cudaSuccess) {
+        if (cudaMalloc(&_sendbuff,total_size) != cudaSuccess) {
             dccl_error("{}: Failed to allocate {} bytes of device memory.", __func__, total_size);
             ret = ncclUnhandledCudaError;
             goto error_group_1;
