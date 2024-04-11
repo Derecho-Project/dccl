@@ -437,9 +437,12 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                 return ret;
             }
         }
-#endif
+        // STEP 3.3: ring algorithm
+        ret = algorithm::all_reduce_ring(recvbuff,device_scratchpad,count,datatype,op,comm,stream);
+#else
         // STEP 3.3: ring algorithm
         ret = algorithm::all_reduce_ring(recvbuff,host_scratchpad,count,datatype,op,comm,stream);
+#endif
         if (ret != ncclSuccess) {
             dccl_error("{}: all_reduce_ring() failed.",
                        __func__);
@@ -473,10 +476,14 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                 return ret;
             }
         }
-#endif
+        // STEP 3.3: rabenseifner algorithm
+        ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,
+                                device_scratchpad,count,datatype,op,comm,stream);
+#else
         // STEP 3.3: rabenseifner algorithm
         ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,
                                 host_scratchpad,count,datatype,op,comm,stream);
+#endif
         if (ret != ncclSuccess) {
             dccl_error("{}: all_reduce_recursive_halving_and_doubling() failed.",
                        __func__);
@@ -608,12 +615,17 @@ ncclResult_t ncclReduceScatter(const void*      sendbuff,
     if (recvbuff_in_device) {
         sync_stream(stream);
     }
-#endif // CUDA_FOUND
-
+    // run reduce scatter
+    ret = algorithm::reduce_scatter_ring(_sendbuff,device_scratchpad,recvcount*world_size,datatype,op,comm,stream,
+            [world_size](uint32_t orank){return (orank + world_size - 1)%world_size;},
+            [world_size](uint32_t nrank){return (nrank + 1)%world_size;});
+#else
     // run reduce scatter
     ret = algorithm::reduce_scatter_ring(_sendbuff,host_scratchpad,recvcount*world_size,datatype,op,comm,stream,
             [world_size](uint32_t orank){return (orank + world_size - 1)%world_size;},
             [world_size](uint32_t nrank){return (nrank + 1)%world_size;});
+#endif // CUDA_FOUND
+
 
     if (ret != ncclSuccess) {
         dccl_error("{}: Failed to call reduce_scatter_ring.", __func__);
