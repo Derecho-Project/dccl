@@ -84,7 +84,7 @@ if (CMAKE_CUDA_COMPILER)
                         OUTPUT_VARIABLE NATIVE_CUDA_ARCH)
         string(STRIP ${NATIVE_CUDA_ARCH} NATIVE_CUDA_ARCH)
         set(CMAKE_CUDA_ARCHITECTURES ${NATIVE_CUDA_ARCH})
-        message("NATIVE_CUDA_ARCH=${NATIVE_CUDA_ARCH}")
+        message(STATUS "NATIVE_CUDA_ARCH=${NATIVE_CUDA_ARCH}")
     endif()
 endif()
 
