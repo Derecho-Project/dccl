@@ -1,13 +1,9 @@
 cmake_minimum_required(VERSION 3.12.4)
 set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
+project(dccl CXX)
 include(CheckLanguage)
 check_language(CUDA)
-if (CMAKE_CUDA_COMPILER)
-project(dccl CUDA CXX)
-else ()
-project(dccl CXX)
-endif()
 
 # Version
 set(dccl_VERSION 1.0rc0)
