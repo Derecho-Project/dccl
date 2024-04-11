@@ -21,6 +21,7 @@
 
 #ifdef  CUDA_FOUND
 #include <cuda_fp16.h>
+#include <cuda.h>
 #endif//CUDA_FOUND
 
 using namespace derecho;
@@ -824,15 +825,35 @@ inline bool is_device_ptr(const void* ptr) {
  */
 inline cudaError_t sync_stream(cudaStream_t stream) {
     cudaEvent_t evt;
+    CUcontext   ctx;
+    if (CUDA_SUCCESS != cuStreamGetCtx(stream,&ctx)) {
+        dccl_error("{} cuStreamGetCtx(stream,&ctx) failed.", __func__);
+        return cudaErrorUnknown;
+    }
+    if (CUDA_SUCCESS != cuCtxPushCurrent(ctx)) {
+        dccl_error("{} cuCtxPushCurrent(ctx) failed.", __func__);
+        return cudaErrorUnknown;
+    }
     cudaError_t err = cudaEventCreate(&evt);
     if (err != cudaSuccess) {
+        cuCtxPopCurrent(&ctx);
         return err;
     }
     err = cudaEventRecord(evt, stream);
     if (err != cudaSuccess) {
+        cuCtxPopCurrent(&ctx);
         return err;
     }
-    return cudaEventSynchronize(evt);
+    err = cudaEventSynchronize(evt);
+    if (err != cudaSuccess) {
+        cuCtxPopCurrent(&ctx);
+        return err;
+    }
+    if (CUDA_SUCCESS != cuCtxPopCurrent(&ctx)) {
+        dccl_error("{} cuCtxPopCurrent(ctx) failed.", __func__);
+        return cudaErrorUnknown;
+    }
+    return cudaSuccess;
 }
 
 /**

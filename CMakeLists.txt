@@ -123,6 +123,7 @@ target_link_libraries(dccl
 if(CUDA_FOUND)
 target_link_libraries(dccl
     CUDA::cudart
+    CUDA::cuda_driver
 )
 endif()
 add_dependencies(dccl core utils)
