@@ -5,6 +5,7 @@
 #include <getopt.h>
 #include <derecho/utils/time.h>
 #include <cassert>
+#include "utils.hpp"
 
 #ifdef __BUILD_FOR_OMPI__
 #include <mpi.h>
@@ -24,6 +25,25 @@
         } \
         assert(err == cudaSuccess); \
     } while(0)
+
+__attribute__((visibility("hidden")))
+void save_cuda_mem (const void* ptr, size_t size, const std::string& fname) {
+    void* dat = malloc(size);
+
+    if (dat == nullptr) {
+        std::cerr << "Failed to allocate " << size << " bytes of memory." << std::endl;
+        return;
+    }
+
+    if(cudaSuccess != cudaMemcpy(dat,ptr,size,cudaMemcpyDeviceToHost)) {
+        std::cerr << "Cannot copy " << size << " bytes from device to host. giving up saving...@" 
+                  << __FILE__ << ":" << __LINE__ << std::endl;
+        return;
+    }
+    save_mem(dat,size,fname);
+    free(dat);
+}
+
 #endif
 
 using namespace dccl;
@@ -45,6 +65,7 @@ const char* help_string =
     "\t--op,-o      the operation, defaulted to SUM. Full op list:\n"
     "\t             sum,prod,max,min,avg\n"
     "\t--count,-c   number of data entries in the array, defaulted to 1024\n"
+    "\t--save,-s    save data in before.dat and after.dat for validation.\n"
     "\t--help,-h    print this message.\n";
 
 #ifdef __BUILD_FOR_OMPI__
@@ -178,6 +199,7 @@ int main(int argc, char** argv) {
         {"type",    required_argument,  0,  't'},
         {"op",      required_argument,  0,  'o'},
         {"count",   required_argument,  0,  'c'},
+        {"save",    no_argument,        0,  's'},
         {"help",    no_argument,        0,  'h'},
         {0}
     };
@@ -185,11 +207,11 @@ int main(int argc, char** argv) {
     int c;
 
     std::string api;
-#if !defined(__BUILD_FOR_OMPI__)
-    int32_t     gpu = -1;
-#endif//!__BUILD_FOR_OMPI__
-    size_t warmup_count = 0;
-    size_t repeat_count = 1000;
+#if !defined(__BUILD_FOR_OMPI__) && defined(CUDA_FOUND)
+    int32_t         gpu = -1;
+#endif//!__BUILD_FOR_OMPI__ && CUDA_FOUND
+    size_t          warmup_count = 0;
+    size_t          repeat_count = 1000;
 #ifdef __BUILD_FOR_OMPI__
     MPI_Datatype    data_type = MPI_UINT32_T;
     MPI_Op          operation = MPI_SUM;
@@ -197,11 +219,12 @@ int main(int argc, char** argv) {
     ncclDataType_t  data_type = ncclUint32;
     ncclRedOp_t     operation = ncclSum;
 #endif
-    size_t data_count = 1024;
+    size_t          data_count = 1024;
+    bool            save = false;
 
     while (true) {
         int option_index = 0;
-        c = getopt_long(argc,argv, "a:g:w:r:t:o:c:h", long_options, &option_index);
+        c = getopt_long(argc,argv, "a:g:w:r:t:o:c:sh", long_options, &option_index);
 
         if (c == -1) {
             break;
@@ -230,6 +253,9 @@ int main(int argc, char** argv) {
             break;
         case 'c':
             data_count = std::stoul(optarg);
+            break;
+        case 's':
+            save = true;
             break;
         case 'h':
             print_help(argv[0]);
@@ -327,6 +353,9 @@ int main(int argc, char** argv) {
     // initialize sendbuf and recvbuf
     memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
     memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
+    if (save) {
+        save_mem(sendbuf,data_count*data_size,"sendbuf.ompi.before.txt");
+    }
 #else//__BUILD_FOR_OMPI__
     size_t data_size = size_of_type(data_type);
     void* dccl_sendbuf = nullptr;
@@ -350,6 +379,9 @@ int main(int argc, char** argv) {
         // initialize sendbuf and recvbuf
         memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
         memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
+        if (save) {
+            save_mem(sendbuf,data_count*data_size,"sendbuf.host.before.txt");
+        }
 #if defined(CUDA_FOUND)
     } else { // GPU Memory
         ASSERTRT(cudaSetDevice(gpu));
@@ -362,6 +394,9 @@ int main(int argc, char** argv) {
                                     CUDA_L1_CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
         ASSERTRT(cudaMemset(sendbuf,static_cast<int>(my_rank),data_count*data_size));
         ASSERTRT(cudaMemset(recvbuf,static_cast<int>(my_rank),data_count*data_size));
+        if (save) {
+            save_cuda_mem(sendbuf,data_count*data_size,"sendbuf.cuda.before.txt");
+        }
     }
 #endif//CUDA_FOUND
 #endif//__BUILD_FOR_OMPI__
@@ -451,6 +486,11 @@ int main(int argc, char** argv) {
     MPI_Win_free(&s_win);
     MPI_Win_free(&r_win);
 #endif//__USE_OMPI_WIN__
+    // save data
+    if (save) {
+        save_mem(ompi_recvbuf,data_count*data_size,"recvbuf.ompi.txt");
+        save_mem(ompi_sendbuf,data_count*data_size,"sendbuf.ompi.after.txt");
+    }
     // free data
     MPI_Free_mem(ompi_sendbuf);
     MPI_Free_mem(ompi_recvbuf);
@@ -466,10 +506,18 @@ int main(int argc, char** argv) {
     // free data
     if (gpu < 0) {
 #endif//CUDA_FOUND
+        if (save) {
+            save_mem(recvbuf,data_count*data_size,"recvbuf.host.txt");
+            save_mem(sendbuf,data_count*data_size,"sendbuf.host.after.txt");
+        }
         free(dccl_sendbuf);
         free(dccl_recvbuf);
 #if defined(CUDA_FOUND)
     } else {
+        if (save) {
+            save_cuda_mem(recvbuf,data_count*data_size,"recvbuf.cuda.txt");
+            save_cuda_mem(sendbuf,data_count*data_size,"sendbuf.cuda.after.txt");
+        }
         ASSERTRT(cudaFree(dccl_sendbuf));
         ASSERTRT(cudaFree(dccl_recvbuf));
     }
