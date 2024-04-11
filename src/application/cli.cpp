@@ -354,7 +354,7 @@ int main(int argc, char** argv) {
     memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
     memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
     if (save) {
-        save_mem(sendbuf,data_count*data_size,"sendbuf.ompi.txt");
+        save_mem(sendbuf,data_count*data_size,"sendbuf.ompi.before.txt");
     }
 #else//__BUILD_FOR_OMPI__
     size_t data_size = size_of_type(data_type);
@@ -380,7 +380,7 @@ int main(int argc, char** argv) {
         memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
         memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
         if (save) {
-            save_mem(sendbuf,data_count*data_size,"sendbuf.host.txt");
+            save_mem(sendbuf,data_count*data_size,"sendbuf.host.before.txt");
         }
 #if defined(CUDA_FOUND)
     } else { // GPU Memory
@@ -395,7 +395,7 @@ int main(int argc, char** argv) {
         ASSERTRT(cudaMemset(sendbuf,static_cast<int>(my_rank),data_count*data_size));
         ASSERTRT(cudaMemset(recvbuf,static_cast<int>(my_rank),data_count*data_size));
         if (save) {
-            save_cuda_mem(sendbuf,data_count*data_size,"sendbuf.cuda.txt");
+            save_cuda_mem(sendbuf,data_count*data_size,"sendbuf.cuda.before.txt");
         }
     }
 #endif//CUDA_FOUND
@@ -489,6 +489,7 @@ int main(int argc, char** argv) {
     // save data
     if (save) {
         save_mem(ompi_recvbuf,data_count*data_size,"recvbuf.ompi.txt");
+        save_mem(ompi_sendbuf,data_count*data_size,"sendbuf.ompi.after.txt");
     }
     // free data
     MPI_Free_mem(ompi_sendbuf);
@@ -507,6 +508,7 @@ int main(int argc, char** argv) {
 #endif//CUDA_FOUND
         if (save) {
             save_mem(recvbuf,data_count*data_size,"recvbuf.host.txt");
+            save_mem(sendbuf,data_count*data_size,"sendbuf.host.after.txt");
         }
         free(dccl_sendbuf);
         free(dccl_recvbuf);
@@ -514,6 +516,7 @@ int main(int argc, char** argv) {
     } else {
         if (save) {
             save_cuda_mem(recvbuf,data_count*data_size,"recvbuf.cuda.txt");
+            save_cuda_mem(sendbuf,data_count*data_size,"sendbuf.cuda.after.txt");
         }
         ASSERTRT(cudaFree(dccl_sendbuf));
         ASSERTRT(cudaFree(dccl_recvbuf));
