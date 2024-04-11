@@ -36,8 +36,6 @@ void save_cuda_mem (const void* ptr, size_t size, const std::string& fname) {
     }
 
     if(cudaSuccess != cudaMemcpy(dat,ptr,size,cudaMemcpyDeviceToHost)) {
-        dccl_error("{} Cannot copy {} bytes from gpu device to host. See {}:{}.",
-                   __func__, __FILE__, __LINE__);
         std::cerr << "Cannot copy " << size << " bytes from device to host. giving up saving...@" 
                   << __FILE__ << ":" << __LINE__ << std::endl;
         return;
