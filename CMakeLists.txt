@@ -3,7 +3,11 @@ set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 include(CheckLanguage)
 check_language(CUDA)
+if (CMAKE_CUDA_COMPILER)
 project(dccl CUDA CXX)
+else ()
+project(dccl CXX)
+endif()
 
 # Version
 set(dccl_VERSION 1.0rc0)
