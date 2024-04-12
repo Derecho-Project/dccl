@@ -2,6 +2,7 @@
 #include <dccl/dccl.hpp>
 #include "internal_common.hpp"
 #include <cuda_fp16.h>
+#include <cuda.h>
 
 namespace dccl{
 
@@ -43,7 +44,26 @@ ncclResult_t do_device_reduce(
     size_t          count,
     ncclRedOp_t     op,
     cudaStream_t    stream) {
-    const size_t nblock = std::min(count/256,static_cast<size_t>(40)); // Tesla T4 has 40 SM Processors.
+    // Calculate the best options for the number of blocks and block sizes.
+    CUcontext   ctx;
+    CUdevice    dev;
+    int         num_sms;
+    if (CUDA_SUCCESS != cuStreamGetCtx(stream, &ctx)) {
+        return ncclUnhandledCudaError;
+    }
+    if (CUDA_SUCCESS != cuCtxPushCurrent(ctx)) {
+        return ncclUnhandledCudaError;
+    }
+    if (CUDA_SUCCESS != cuCtxGetDevice(&dev)) {
+        return ncclUnhandledCudaError;
+    }
+    if (CUDA_SUCCESS != cuDeviceGetAttribute(&num_sms,CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,dev)) {
+        return ncclUnhandledCudaError;
+    }
+    if (CUDA_SUCCESS != cuCtxPopCurrent(&ctx)) {
+        return ncclUnhandledCudaError;
+    }
+    const size_t nblock = num_sms;
     switch(dtype) {
     case ncclInt8:
         reduce_kernel<int8_t><<<nblock,256,0,stream>>>(sendbuf,recvbuf,count,op);
