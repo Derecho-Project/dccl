@@ -85,6 +85,7 @@ ncclResult_t reduce_scatter_ring(
                              ret=do_device_reduce,
                              scratchpad,__DATA__(my_rank - s - 1),
                              count/world_size,op,stream);
+            ret = (sync_stream(stream) == cudaSuccess)? ncclSuccess:ncclUnhandledCudaError;
         } else {
 #endif
             ON_DCCL_DATATYPE(datatype,
