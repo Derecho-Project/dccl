@@ -457,9 +457,12 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to register sendbuf@" << sendbuf << "to dccl." << std::endl;
         return 1;
     }
-    if (dcclRegisterCacheMemory(comm,recvbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
-        std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
-        return 1;
+    // only broadcast test need it.
+    if (api == "broadcast") {
+        if (dcclRegisterCacheMemory(comm,recvbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
+            std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
+            return 1;
+        }
     }
 
 #endif//__BUILD_FOR_OMPI__
@@ -499,8 +502,11 @@ int main(int argc, char** argv) {
     if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
         std::cerr << "Failed to deregister sendbuf@" << sendbuf << "from dccl." << std::endl;
     }
-    if (dcclDeregisterCacheMemory(comm,recvbuf) != ncclSuccess) {
-        std::cerr << "Failed to deregister recvbuf@" << recvbuf << "from dccl." << std::endl;
+    if (api == "broadcast") {
+        // only broad cast need recvbuf.
+        if (dcclDeregisterCacheMemory(comm,recvbuf) != ncclSuccess) {
+            std::cerr << "Failed to deregister recvbuf@" << recvbuf << "from dccl." << std::endl;
+        }
     }
 #if defined(CUDA_FOUND)
     // free data
