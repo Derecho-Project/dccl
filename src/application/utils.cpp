@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iomanip>
 
+__attribute__((visibility("default")))
 void save_mem(const void* ptr, size_t size, const std::string& fname) {
     size_t offset   = 0;
     const size_t step     = 32;

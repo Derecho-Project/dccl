@@ -13,4 +13,4 @@
  * @param[in]   size    The data size.
  * @param[in]   fname   The file name.
  */
-__attribute__((visibility("default"))) void save_mem(const void* ptr, size_t size, const std::string& fname);
+void save_mem(const void* ptr, size_t size, const std::string& fname);

@@ -38,7 +38,7 @@ add_custom_command(TARGET dccl_cli POST_BUILD
 )
 
 if(MPI_CXX_FOUND AND MPI_CXX_VERSION VERSION_GREATER_EQUAL 3.1)
-    add_executable(ompi_cli cli.cpp)
+    add_executable(ompi_cli cli.cpp utils.cpp)
     target_include_directories(ompi_cli PRIVATE
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>

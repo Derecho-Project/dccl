@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #endif//__BUILD_FOR_OMPI__
 
-#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI)
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
 //TODO: find a better way to determine CUDA L1 cache line size
 #define ASSERTRT(stmt) \
     do { \
