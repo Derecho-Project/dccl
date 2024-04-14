@@ -477,14 +477,16 @@ ncclResult_t ncclAllReduce(const void*      sendbuff,
                            __func__, __FILE__, __LINE__);
                 return ret;
             }
+            // STEP 3.3: rabenseifner algorithm
+            ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,
+                                    device_scratchpad,count,datatype,op,comm,stream);
+        } else {
+#endif
+            // STEP 3.3: rabenseifner algorithm
+            ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,
+                                    host_scratchpad,count,datatype,op,comm,stream);
+#ifdef CUDA_FOUND
         }
-        // STEP 3.3: rabenseifner algorithm
-        ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,
-                                device_scratchpad,count,datatype,op,comm,stream);
-#else
-        // STEP 3.3: rabenseifner algorithm
-        ret = algorithm::all_reduce_recursive_halving_and_doubling(recvbuff,
-                                host_scratchpad,count,datatype,op,comm,stream);
 #endif
         if (ret != ncclSuccess) {
             dccl_error("{}: all_reduce_recursive_halving_and_doubling() failed.",
