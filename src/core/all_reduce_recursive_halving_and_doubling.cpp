@@ -11,7 +11,8 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         size_t          count,
         ncclDataType_t  datatype,
         ncclRedOp_t     op,
-        ncclComm_t      comm) {
+        ncclComm_t      comm,
+        cudaStream_t    stream) {
     uint32_t        my_rank = dcclGetMyRank(comm);
     ncclResult_t    ret = ncclSuccess;
     size_t          total_data_size = count * size_of_type(datatype);
@@ -19,12 +20,19 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
     auto            shard_members  = get_dccl_shard_members(comm);
 
     // STEP 1 check contraints
-    if (CACHELINE_OFFSET(buffer)) {
-        dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
-                  "Possible performance degradation might occur.",
-                  buffer, CACHELINE_SIZE);
-
+#ifdef CUDA_FOUND
+    bool            is_in_device = is_device_ptr(buffer);
+    if (!is_in_device) {
+#endif
+        if (CACHELINE_OFFSET(buffer)) {
+            dccl_warn("The buffer @{:p} is not cacheline ({} bytes) aligned. "
+                      "Possible performance degradation might occur.",
+                      buffer, CACHELINE_SIZE);
+    
+        }
+#ifdef CUDA_FOUND
     }
+#endif
 
     // STEP 2 preprocessing -- > power of two
     // # new rank is calculated as follows:
@@ -69,30 +77,29 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
         uint32_t s_chunks = dccl_oob_send(comm,peer_id,
                 reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (total_data_size>>1)),
                 total_data_size>>1);
-        /*****
-        struct iovec siov,riov;
-        siov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (total_data_size>>1));
-        siov.iov_len    = (total_data_size>>1);
-        SUBGROUP_HANDLE(comm).oob_send(peer_id,&siov,1);
-        *****/
         // receive the top half from the follower
         uint32_t r_chunks = dccl_oob_recv(comm,peer_id,scratchpad,total_data_size>>1);
-        /*****
-        riov.iov_base   = scratchpad;
-        riov.iov_len    = (total_data_size>>1);
-        SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
-        *****/
         dccl_oob_wait_for_send(comm,peer_id,s_chunks);
         dccl_oob_wait_for_recv(comm,peer_id,r_chunks);
-        /*****
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
-        *****/
         // do reduce for the top half
-        ON_DCCL_DATATYPE(datatype,
-                         ret=do_reduce,
-                         scratchpad,buffer,
-                         count>>1,op);
+#ifdef CUDA_FOUND
+        if (is_in_device) {
+            ON_DCCL_DATATYPE(datatype,
+                             ret=do_device_reduce,
+                             scratchpad,buffer,
+                             count>>1,op,stream);
+            if (ret == ncclSuccess) {
+                ret = (sync_stream(stream) == cudaSuccess)? ncclSuccess:ncclUnhandledCudaError;
+            }
+        } else {
+#endif
+            ON_DCCL_DATATYPE(datatype,
+                             ret=do_host_reduce,
+                             scratchpad,buffer,
+                             count>>1,op);
+#ifdef CUDA_FOUND
+        }
+#endif
         if (ret != ncclSuccess) {
             dccl_error("{} failed to do reduce, error= {}.",
                        __func__, ret);
@@ -103,41 +110,34 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
                 reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (total_data_size>>1)),
                 total_data_size>>1);
         dccl_oob_wait_for_recv(comm,peer_id,r_chunks);
-        /*****
-        riov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (total_data_size>>1));
-        riov.iov_len    = (total_data_size>>1);
-        SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
-        *****/
     } else if (my_role == Follower) {
         uint32_t    peer_rank   = my_rank - 1;
         auto        peer_id     = shard_members.at(peer_rank);
         // send the top half to the leader
         uint32_t s_chunks = dccl_oob_send(comm,peer_id,buffer,total_data_size>>1);
-        /*****
-        struct iovec siov,riov;
-        siov.iov_base   = buffer;
-        siov.iov_len    = (total_data_size>>1);
-        SUBGROUP_HANDLE(comm).oob_send(peer_id,&siov,1);
-        *****/
         // receive the bottom half from the leader
         uint32_t r_chunks = dccl_oob_recv(comm,peer_id,scratchpad,total_data_size>>1);
-        /*****
-        riov.iov_base   = scratchpad;
-        riov.iov_len    = (total_data_size>>1);
-        SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
-        *****/
         dccl_oob_wait_for_send(comm,peer_id,s_chunks);
         dccl_oob_wait_for_recv(comm,peer_id,r_chunks);
-        /*****
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
-        *****/
         // do reduce for the bottom half
-        ON_DCCL_DATATYPE(datatype,
-                         ret=do_reduce,
-                         scratchpad,reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer)+(total_data_size>>1)),
-                         count>>1,op);
+#ifdef CUDA_FOUND
+        if (is_in_device) {
+            ON_DCCL_DATATYPE(datatype,
+                             ret=do_device_reduce,
+                             scratchpad,reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer)+(total_data_size>>1)),
+                             count>>1,op,stream);
+            if (ret == ncclSuccess) {
+                ret = (sync_stream(stream) == cudaSuccess)? ncclSuccess:ncclUnhandledCudaError;
+            }
+        } else {
+#endif
+            ON_DCCL_DATATYPE(datatype,
+                             ret=do_host_reduce,
+                             scratchpad,reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer)+(total_data_size>>1)),
+                             count>>1,op);
+#ifdef CUDA_FOUND
+        }
+#endif
         if (ret != ncclSuccess) {
             dccl_error("{} failed to do reduce, error= {}.",
                        __func__, ret);
@@ -148,19 +148,13 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
                 reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (total_data_size>>1)),
                 total_data_size>>1);
         dccl_oob_wait_for_send(comm,peer_id,s_chunks);
-        /*****
-        siov.iov_base   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(buffer) + (total_data_size>>1));
-        siov.iov_len    = (total_data_size>>1);
-        SUBGROUP_HANDLE(comm).oob_send(peer_id,&siov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
-        *****/
     }
 
     TIMESTAMP(TT_ALLREDUCE_RDH_PREPROCESS,my_rank,op);
 
     // STEP 3 reduce scatter and all gather on subworld.
     if (my_role == Leader || my_role == Independent) {
-        ret = reduce_scatter_recursive_halving(buffer,scratchpad,count,datatype,op,comm,
+        ret = reduce_scatter_recursive_halving(buffer,scratchpad,count,datatype,op,comm,stream,
                                                subworld_size,to_new_rank,to_old_rank);
         if (ret != ncclSuccess) {
             dccl_error("{}: reduce scatter failed with error = {}.",
@@ -170,7 +164,7 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
 
         TIMESTAMP(TT_ALLREDUCE_REDUCESCATTER,my_rank,op);
 
-        ret = all_gather_recursive_doubling(buffer,count,datatype,comm,
+        ret = all_gather_recursive_doubling(buffer,count,datatype,comm,stream,
                                             subworld_size,to_new_rank,to_old_rank);
 
         if (ret != ncclSuccess) {
@@ -192,13 +186,6 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
        
         uint32_t s_chunks = dccl_oob_send(comm,peer_id,buffer,total_data_size);
         dccl_oob_wait_for_send(comm,peer_id,s_chunks);
-        /*****
-        struct iovec siov;
-        siov.iov_base   = buffer;
-        siov.iov_len    = total_data_size;
-        SUBGROUP_HANDLE(comm).oob_send(peer_id,&siov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_SEND,DCCL_OOB_TIMEOUT_US);
-        *****/
     } else if (my_role == Follower) {
         // receive total data from Leader
         uint32_t    peer_rank   = my_rank - 1;
@@ -206,13 +193,6 @@ ncclResult_t all_reduce_recursive_halving_and_doubling(
        
         uint32_t r_chunks = dccl_oob_recv(comm,peer_id,buffer,total_data_size);
         dccl_oob_wait_for_recv(comm,peer_id,r_chunks);
-        /*****
-        struct iovec riov;
-        riov.iov_base   = buffer;
-        riov.iov_len    = total_data_size;
-        SUBGROUP_HANDLE(comm).oob_recv(peer_id,&riov,1);
-        SUBGROUP_HANDLE(comm).wait_for_oob_op(peer_id,OOB_OP_RECV,DCCL_OOB_TIMEOUT_US);
-        *****/
     }
 
     TIMESTAMP(TT_ALLREDUCE_RDH_POSTPROCESS,my_rank,op);

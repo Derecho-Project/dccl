@@ -8,6 +8,18 @@
 #include <string>
 #endif//ENABLE_EVALUATION
 
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+#include <cuda_runtime.h>
+#else
+/**
+ * @cond    DoxygenSuppressed
+ * define related types in case cuda does not exist.
+ */
+typedef void* cudaStream_t;
+/**
+ * @endcond
+ */
+#endif
 /**
  * @file    dccl.hpp
  * @brief   Derecho Collective Communications Library (DCCL) API
@@ -173,19 +185,26 @@ ncclResult_t  dcclDeregisterCacheMemory(ncclComm_t comm, void* buffer, size_t si
  *
  * In-place operation will happen if sendbuff == recvbuff.
  *
- * @param[in]   sendbuff    The buffer containing local data to be reduced.
- * @param[out]  recvbuff    The buffer to receive the reduced result.
+ * @param[in]   sendbuff    The buffer containing local data to be reduced. If `stream` receives 
+ *                          `static_cast<cudaStream_t>(nullptr)`, `sendbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in GPU memory.
+ * @param[out]  recvbuff    The buffer to receive the reduced result. If `stream` receives
+ *                          `static_cast<cudaStream_t>(nullptr)`, `recvbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in  GPU memory.
  * @param[in]   count       The number of entries in the buffer.
  * @param[in]   datatype    The type of the data.
  * @param[in]   op          The reduced operation to be performed.
  * @param[in]   comm        The DCCL communication object.
+ * @param[in]   stream      The cuda stream when `sendbuff` and `recvbuff` are pointers to GPU mem. It must be
+ *                          `static_cast<cudaStream_t>(nullptr)` when `sendbuff` and `recvbuff` are pointer to HOST
+ *                          memory buffers.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
  * @return      Error code
  */
 ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
-    ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
+    ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm, cudaStream_t stream);
 
 /**
  * @brief Reduce-Scatter API
@@ -203,19 +222,26 @@ ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
  * Please see NCCL's API in
  * [nccl.h](https://github.com/NVIDIA/nccl/blob/6e24ef4e1f1eac9f104d115ef65429f179924ee7/src/nccl.h.in#L311-L321).
  *
- * @param[in]   sendbuff    The buffer containing local data to be reduced.
- * @param[out]  recvbuff    The buffer to receive the reduced result.
+ * @param[in]   sendbuff    The buffer containing local data to be reduced. If `stream` receives 
+ *                          `static_cast<cudaStream_t>(nullptr)`, `sendbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in GPU memory.
+ * @param[out]  recvbuff    The buffer to receive the reduced result. If `stream` receives
+ *                          `static_cast<cudaStream_t>(nullptr)`, `recvbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in  GPU memory.
  * @param[in]   recvcount   The number of entries in the receive buffer.
  * @param[in]   datatype    The type of the data.
  * @param[in]   op          The reduced operation to be performed.
  * @param[in]   comm        The DCCL communication object.
+ * @param[in]   stream      The cuda stream when `sendbuff` and `recvbuff` are pointers to GPU mem. It must be
+ *                          `static_cast<cudaStream_t>(nullptr)` when `sendbuff` and `recvbuff` are pointer to HOST
+ *                          memory buffers.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
  * @return      Error code
  */
 ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
-    size_t recvcount, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm);
+    size_t recvcount, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm, cudaStream_t stream);
 
 /**
  * @brief Broadcast API
@@ -242,37 +268,49 @@ ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
  * IMPORTANT: Due to the current Derecho design, we DO need copy data on send and receive. This is going to be solved
  *            in our real-zerocopy design.
  *
- * @param[in]   sendbuff    The buffer containing local data to be sent.
- * @param[out]  recvbuff    The buffer to receive the data.
+ * @param[in]   sendbuff    The buffer containing local data to be reduced. If `stream` receives 
+ *                          `static_cast<cudaStream_t>(nullptr)`, `sendbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in GPU memory.
+ * @param[out]  recvbuff    The buffer to receive the reduced result. If `stream` receives
+ *                          `static_cast<cudaStream_t>(nullptr)`, `recvbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in  GPU memory.
  * @param[in]   count       The number of entries in the receive buffer.
  * @param[in]   datatype    The type of the data.
  * @param[in]   root        The rank of the root node.
  * @param[in]   comm        The DCCL communication object.
+ * @param[in]   stream      The cuda stream when `sendbuff` and `recvbuff` are pointers to GPU mem. It must be
+ *                          `static_cast<cudaStream_t>(nullptr)` when `sendbuff` and `recvbuff` are pointer to HOST
+ *                          memory buffers.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
  * @return      Error code
  */
 ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count,
-    ncclDataType_t datatype, int root, ncclComm_t comm);
+    ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream);
 
 /**
  * @brief Bcast API
  *
  * This API is compatible to NVIDIA's NCCL
  *
- * @param[in,out]   buff    The buffer to receive the data.
+ * @param[in,out]   buff    The buffer containing local data to be reduced. If `stream` receives 
+ *                          `static_cast<cudaStream_t>(nullptr)`, `buff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in GPU memory.
  * @param[in]   count       The number of entries in the receive buffer.
  * @param[in]   datatype    The type of the data.
  * @param[in]   root        The rank of the root node.
  * @param[in]   comm        The DCCL communication object.
+ * @param[in]   stream      The cuda stream when `buff` is a pointer to GPU mem. It must be 
+ *                          `static_cast<cudaStream_t>(nullptr)` when `sendbuff` and `recvbuff` are pointer to HOST
+ *                          memory buffers.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
  * @return      Error code
  */
 ncclResult_t ncclBcast(void* buff, size_t count,
-    ncclDataType_t datatype, int root, ncclComm_t comm);
+    ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream);
 
 /**
  * @brief Reduce API
@@ -286,20 +324,27 @@ ncclResult_t ncclBcast(void* buff, size_t count,
  *
  *   In-place operation will happen if sendbuff == recvbuff."
  *
- * @param[in]   sendbuff    The buffer containing local data to reduce.
- * @param[out]  recvbuff    The buffer receiving reduced data.
+ * @param[in]   sendbuff    The buffer containing local data to be reduced. If `stream` receives 
+ *                          `static_cast<cudaStream_t>(nullptr)`, `sendbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in GPU memory.
+ * @param[out]  recvbuff    The buffer to receive the reduced result. If `stream` receives
+ *                          `static_cast<cudaStream_t>(nullptr)`, `recvbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in  GPU memory.
  * @param[in]   count       The number of entries in the receive buffer.
  * @param[in]   datatype    The type of the data.
  * @param[in]   op          The reduce operation to be performed.
  * @param[in]   root        The rank of the root node.
  * @param[in]   comm        The DCCL communication object.
+ * @param[in]   stream      The cuda stream when `sendbuff` and `recvbuff` are pointers to GPU mem. It must be
+ *                          `static_cast<cudaStream_t>(nullptr)` when `sendbuff` and `recvbuff` are pointer to HOST
+ *                          memory buffers.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
  * @return      Error code
  */
 ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
-    ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm);
+    ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
 
 /**
  * @brief AllGather API
@@ -312,50 +357,67 @@ ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
  *
  *   In-place operations will happen if sendbuff == recvbuff + rank * sendcount."
  *
- * @param[in]   sendbuff        The buffer containing the local data to gather.
- * @param[out]  recvbuff        The buffer receiving gathered data.
+ * @param[in]   sendbuff    The buffer containing local data to be reduced. If `stream` receives 
+ *                          `static_cast<cudaStream_t>(nullptr)`, `sendbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in GPU memory.
+ * @param[out]  recvbuff    The buffer to receive the reduced result. If `stream` receives
+ *                          `static_cast<cudaStream_t>(nullptr)`, `recvbuff` is a pointer to a host memory buffer;
+ *                          Otherwise, it is a pointer to a buffer in  GPU memory.
  * @param[in]   sendcount       The number of data entries in the send buffer.
  * @param[in]   datatype        The type of the data.
  * @param[in]   comm        The DCCL communication object.
+ * @param[in]   stream      The cuda stream when `sendbuff` and `recvbuff` are pointers to GPU mem. It must be
+ *                          `static_cast<cudaStream_t>(nullptr)` when `sendbuff` and `recvbuff` are pointer to HOST
+ *                          memory buffers.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
  * @return      Error code
  */
 ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
-    ncclDataType_t datatype, ncclComm_t comm);
+    ncclDataType_t datatype, ncclComm_t comm, cudaStream_t stream);
 
 /**
  * @brief Point-to-Point send
  *
- * @param[in]   sendbuff        The buffer containing the local data to send.
+ * @param[in]   sendbuff        The buffer containing local data to be reduced. If `stream` receives 
+ *                              `static_cast<cudaStream_t>(nullptr)`, `sendbuff` is a pointer to a host memory buffer;
+ *                              Otherwise, it is a pointer to a buffer in GPU memory.
  * @param[in]   count           The number of data entries in the send buffer.
  * @param[in]   datatype        The type of the data.
  * @param[in]   peer            The rank of the receiver.
  * @param[in]   comm            The DCCL communication object.
+ * @param[in]   stream          The cuda stream when `sendbuff` is a pointer to GPU mem. It must be
+ *                              `static_cast<cudaStream_t>(nullptr)` when `sendbuff` and `recvbuff` are pointer to HOST
+ *                              memory buffers.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
  * @return      Error code
  */
 ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype,
-    int peer, ncclComm_t comm);
+    int peer, ncclComm_t comm, cudaStream_t stream);
 
 /**
  * @brief Point-to-Point recv
  *
- * @param[in]   recvbuff        The buffer receiving the data from peer.
+ * @param[out]  recvbuff        The buffer to receive the reduced result. If `stream` receives
+ *                              `static_cast<cudaStream_t>(nullptr)`, `recvbuff` is a pointer to a host memory buffer;
+ *                              Otherwise, it is a pointer to a buffer in  GPU memory.
  * @param[in]   count           The number of data entries in the buffer.
  * @param[in]   datatype        The type of the data.
  * @param[in]   peer            The rank of the receiver.
  * @param[in]   comm            The DCCL communication object.
+ * @param[in]   stream          The cuda stream when `recvbuff` is a pointers to GPU mem. It must be
+ *                              `static_cast<cudaStream_t>(nullptr)` when `sendbuff` and `recvbuff` are pointer to HOST
+ *                              memory buffers.
  *
  * @throws      std::runtime_error A runtime error might be raised in case of exceptions.
  *
  * @return      Error code
  */
 ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
-    ncclComm_t comm);
+    ncclComm_t comm, cudaStream_t stream);
 
 /**
  * @}
@@ -374,6 +436,24 @@ ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int
  * @return      The offset of `addr` in a cacheline.
  */
 #define CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CACHELINE_SIZE)
+
+/**
+ * @brief Test the offset of an address in GPU's L1 cacheline.
+ *
+ * @param[in]   addr        Some address of any pointer type
+ *
+ * @return      The offset of `addr` in GPU's L1 cacheline.
+ */
+#define CUDA_L1_CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CUDA_L1_CACHELINE_SIZE)
+
+/**
+ * @brief Test the offset of an address in GPU's L2 cacheline.
+ *
+ * @param[in]   addr        Some address of any pointer type
+ *
+ * @return      The offset of `addr` in GPU's L2 cacheline.
+ */
+#define CUDA_L2_CACHELINE_OFFSET(addr)  ( ((uint64_t)addr)%CUDA_L2_CACHELINE_SIZE)
 
 /**
  * @brief Get the world size

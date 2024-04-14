@@ -1,5 +1,6 @@
 #pragma once
 
+#ifndef NVCC_VISIBLE
 /**
  * @file    internal_common.hpp
  * @brief   Internal utilities (types, macros, and functions) which be hidden from DCCL API users.
@@ -9,10 +10,19 @@
  */
 #include <atomic>
 #include <derecho/core/derecho.hpp>
+#endif//!NVCC_VISIBLE
+
 #include <dccl/dccl.hpp>
+
+#ifndef NVCC_VISIBLE
 #include "blob.hpp"
 #include <mutex>
 #include <condition_variable>
+
+#ifdef  CUDA_FOUND
+#include <cuda_fp16.h>
+#include <cuda.h>
+#endif//CUDA_FOUND
 
 using namespace derecho;
 
@@ -337,6 +347,7 @@ inline size_t size_of_type(ncclDataType_t datatype) {
  * @param[in]   expr            The expression suffixed with `<data type>`, like `<int32_t>`
  * @param[in]   ...             the arguments passed to `expr<data type>()`
  */
+#ifdef CUDA_FOUND
 #define ON_DCCL_DATATYPE(datatype, expr, ... ) \
     switch (datatype) { \
     case ncclInt8: \
@@ -364,9 +375,42 @@ inline size_t size_of_type(ncclDataType_t datatype) {
         expr<double>(__VA_ARGS__); \
         break; \
     case ncclFloat16: \
+        expr<half>(__VA_ARGS__); \
+        break; \
     default: \
         break; \
     }
+#else // !CUDA_FOUND
+#define ON_DCCL_DATATYPE(datatype, expr, ... ) \
+    switch (datatype) { \
+    case ncclInt8: \
+        expr<int8_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint8: \
+        expr<uint8_t>(__VA_ARGS__); \
+        break; \
+    case ncclInt32: \
+        expr<int32_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint32: \
+        expr<uint32_t>(__VA_ARGS__); \
+        break; \
+    case ncclInt64: \
+        expr<int64_t>(__VA_ARGS__); \
+        break; \
+    case ncclUint64: \
+        expr<uint64_t>(__VA_ARGS__); \
+        break; \
+    case ncclFloat32: \
+        expr<float>(__VA_ARGS__); \
+        break; \
+    case ncclFloat64: \
+        expr<double>(__VA_ARGS__); \
+        break; \
+    default: \
+        break; \
+    }
+#endif // CUDA_FOUND
 
 /**
  * @brief Reverse the least significants bits of an integer.
@@ -433,7 +477,7 @@ inline IntegerType log_two(IntegerType n) {
 }
 
 /**
- * @brief Perform a local reduce
+ * @brief Perform a local reduce with CPU
  * This is an optimized reduce operation on two local buffers.
  * It performs the following operation:
  *
@@ -450,10 +494,10 @@ inline IntegerType log_two(IntegerType n) {
  * @return          Error Code
  */
 template<typename DT>
-ncclResult_t do_reduce(const void*  sendbuf,
-                       void*        recvbuf,
-                       size_t       count,
-                       ncclRedOp_t  op) {
+ncclResult_t do_host_reduce(const void*  sendbuf,
+                            void*        recvbuf,
+                            size_t       count,
+                            ncclRedOp_t  op) {
     const DT*   psend = static_cast<const DT*>(sendbuf);
     DT*         precv = static_cast<DT*>(recvbuf);
 
@@ -540,6 +584,112 @@ ncclResult_t do_reduce(const void*  sendbuf,
     }
     return ncclSuccess;
 }
+} // namespace dccl
+#endif // !NVCC_VISIBLE
+
+
+#ifdef CUDA_FOUND
+namespace dccl {
+
+/**
+ * @brief Perform a local reduce with GPU
+ * This is an optimized reduce operation on two local buffers.
+ * It performs the following operation:
+ *
+ * `recvbuf[i] = op(recvbuf[i],senddat[i])`
+ *
+ * , for `i` in `[0, count)`.
+ * This is implemented as a cuda kernel.
+ *
+ * @param[in]       sendbuf     List of operand 1.
+ * @param[in,out]   recvbuf     List of operand 2, also used to receive the reduced results.
+ * @param[in]       dtype       The type of the data elements.
+ * @param[in]       count       The number of data entries in the algorithm.
+ * @param[in]       op          The reduce operation.
+ * @param[in]       stream      The CUDA stream
+ *
+ * @return          Error Code
+ */
+ncclResult_t do_device_reduce(const void*       sendbuf,
+                              void*             recvbuf,
+                              ncclDataType_t    dtype,
+                              size_t            count,
+                              ncclRedOp_t       op,
+                              cudaStream_t      stream);
+
+} // namespace dccl
+#endif // CUDA_FOUND
+
+#ifndef NVCC_VISIBLE
+namespace dccl {
+#ifdef CUDA_FOUND
+/**
+ * @brief Perform a local reduce with GPU
+ * This is an optimized reduce operation on two local buffers.
+ * It performs the following operation:
+ *
+ * `recvbuf[i] = op(recvbuf[i],senddat[i])`
+ *
+ * , for `i` in `[0, count)`.
+ *
+ * @tparam          DT          The type of the data.
+ * @param[in]       sendbuf     List of operand 1.
+ * @param[in,out]   recvbuf     List of operand 2, also used to receive the reduced results.
+ * @param[in]       count       The number of data entries in the algorithm.
+ * @param[in]       op          The reduce operation.
+ * @param[in]       stream      The CUDA stream
+ *
+ * @return          Error Code
+ */
+template<typename DT>
+ncclResult_t do_device_reduce(const void*   sendbuf,
+                              void*         recvbuf,
+                              size_t        count,
+                              ncclRedOp_t   op,
+                              cudaStream_t  stream) {
+
+    if constexpr (std::is_same_v<DT,int8_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclInt8,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,uint8_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclUint8,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,int32_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclInt32,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,uint32_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclUint32,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,int64_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclInt64,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,uint64_t>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclUint64,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,float>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclFloat32,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,double>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclFloat64,count,op,stream);
+    }
+
+    if constexpr (std::is_same_v<DT,half>) {
+        return do_device_reduce(sendbuf,recvbuf,ncclFloat16,count,op,stream);
+    }
+
+    dccl_error("{} failed with unknown Datatype: {}", __func__, typeid(DT).name());
+
+    return ncclInvalidArgument;
+
+}
+#endif//CUDA_FOUND
 
 /**
  * @brief max message size
@@ -641,4 +791,105 @@ inline void dccl_oob_wait_for_recv(ncclComm_t& comm, node_id_t& fid, uint32_t nu
     }
 }
 
+#ifdef CUDA_FOUND
+/**
+ * @brief test if a pointer is a host pointer or a device pointer.
+ * 
+ * @param[in]   ptr         The pointer to be tested.
+ *
+ * @return      True for device pointer, false for host pointer.
+ */
+inline bool is_device_ptr(const void* ptr) {
+    cudaPointerAttributes attrs;
+    if (cudaPointerGetAttributes(&attrs,ptr) == cudaSuccess) {
+        switch(attrs.type) {
+        case cudaMemoryTypeUnregistered:
+        case cudaMemoryTypeHost:
+            return false;
+        case cudaMemoryTypeDevice:
+        case cudaMemoryTypeManaged:
+            return true;
+        default:
+            break;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Synchronize with a stream
+ *
+ * @param[in]   stream      The cuda stream to synchronize.
+ *
+ * @return      error code
+ */
+inline cudaError_t sync_stream(cudaStream_t stream) {
+    cudaEvent_t evt;
+    CUcontext   ctx;
+    if (CUDA_SUCCESS != cuStreamGetCtx(stream,&ctx)) {
+        dccl_error("{} cuStreamGetCtx(stream,&ctx) failed.", __func__);
+        return cudaErrorUnknown;
+    }
+    if (CUDA_SUCCESS != cuCtxPushCurrent(ctx)) {
+        dccl_error("{} cuCtxPushCurrent(ctx) failed.", __func__);
+        return cudaErrorUnknown;
+    }
+    cudaError_t err = cudaEventCreate(&evt);
+    if (err != cudaSuccess) {
+        cuCtxPopCurrent(&ctx);
+        return err;
+    }
+    err = cudaEventRecord(evt, stream);
+    if (err != cudaSuccess) {
+        cuCtxPopCurrent(&ctx);
+        return err;
+    }
+    err = cudaEventSynchronize(evt);
+    if (err != cudaSuccess) {
+        cuCtxPopCurrent(&ctx);
+        return err;
+    }
+    if (CUDA_SUCCESS != cuCtxPopCurrent(&ctx)) {
+        dccl_error("{} cuCtxPopCurrent(ctx) failed.", __func__);
+        return cudaErrorUnknown;
+    }
+    return cudaSuccess;
+}
+
+/**
+ * @brief get the device id from the stream
+ * We don't need it yet...
+ *
+ * @param[in]   stream      The cuda stream
+ *
+ * @return      device number -1 for error
+ *
+inline int get_device_by_stream(cudaStream_t stream) {
+    CUresult    err;
+    CUcontext   ctx;
+    CUdevice    device;
+    if ((err = cuStreamGetCtx(stream,&ctx)) != CUDA_SUCCESS) {
+        dccl_error("{} cuStreamGetCtx(stream,&ctx) failed with error {}.", __func__, err);
+        return -1;
+    }
+    if ((err = cuCtxPushCurrent (ctx)) != CUDA_SUCCESS) {
+        dccl_error("{} cuCtxPushCurrent(ctx) failed with error {}.", __func__, err);
+        return -1;
+    }
+    if ((err = cuGetDevice(&device)) != CUDA_SUCCESS) {
+        dccl_error("{} cuGetDevice(&device) failed with error {}.", __func__, err);
+        cuCtxPopCurrent(&ctx);
+        return -1;
+    }
+    if ((err = cuCtxPopCurrent(&ctx)) != CUDA_SUCCESS) {
+        dccl_error("{} cuCtxPopCurrent(&ctx) failed with error {}.", __func__, err);
+    }
+    return static_cast<int>(device);
+}
+*/
+
+#endif // CUDA_FOUND
+
 } // namespace dccl
+
+#endif // !NVCC_VISIBLE

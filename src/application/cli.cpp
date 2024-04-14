@@ -4,11 +4,47 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <derecho/utils/time.h>
+#include <cassert>
+#include "utils.hpp"
 
 #ifdef __BUILD_FOR_OMPI__
 #include <mpi.h>
 #include <stdlib.h>
 #endif//__BUILD_FOR_OMPI__
+
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+//TODO: find a better way to determine CUDA L1 cache line size
+#define ASSERTRT(stmt) \
+    do { \
+        cudaError_t err = (stmt); \
+        if (err != cudaSuccess) { \
+            const char *_err_desc = cudaGetErrorString(err); \
+            std::cerr << "CUDA Runtime Error: " \
+                      << "(" << err << ")" \
+                      << _err_desc << std::endl; \
+        } \
+        assert(err == cudaSuccess); \
+    } while(0)
+
+__attribute__((visibility("hidden")))
+void save_cuda_mem (const void* ptr, size_t size, const std::string& fname) {
+    void* dat = malloc(size);
+
+    if (dat == nullptr) {
+        std::cerr << "Failed to allocate " << size << " bytes of memory." << std::endl;
+        return;
+    }
+
+    if(cudaSuccess != cudaMemcpy(dat,ptr,size,cudaMemcpyDeviceToHost)) {
+        std::cerr << "Cannot copy " << size << " bytes from device to host. giving up saving...@" 
+                  << __FILE__ << ":" << __LINE__ << std::endl;
+        return;
+    }
+    save_mem(dat,size,fname);
+    free(dat);
+}
+
+#endif
 
 using namespace dccl;
 
@@ -19,6 +55,9 @@ const char* help_string =
     "\t             - 'send' and 'recv' only work between rank 0 and 1. \n"
     "\t             - only rank 0 will 'broadcast', all other node will receive. \n"
     "\t             - 'reduce' will reduce to rank 0.\n"
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+    "\t--gpu,-g     gpu device to use. If not specified, CPU is used.\n"
+#endif
     "\t--warmup,-w  number of operations for warmup, defaulted to 0.\n"
     "\t--repeat,-r  number of operations for evaluation, defaulted to 1000.\n"
     "\t--type,-t    type of the data, defaulted to uint32. Full type list:\n"
@@ -26,6 +65,7 @@ const char* help_string =
     "\t--op,-o      the operation, defaulted to SUM. Full op list:\n"
     "\t             sum,prod,max,min,avg\n"
     "\t--count,-c   number of data entries in the array, defaulted to 1024\n"
+    "\t--save,-s    save data in before.dat and after.dat for validation.\n"
     "\t--help,-h    print this message.\n";
 
 #ifdef __BUILD_FOR_OMPI__
@@ -151,11 +191,15 @@ int main(int argc, char** argv) {
     // step 0 - parameters
     static struct option long_options[] = {
         {"api",     required_argument,  0,  'a'},
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+        {"gpu",     required_argument,  0,  'g'},
+#endif
         {"warmup",  required_argument,  0,  'w'},
         {"repeat",  required_argument,  0,  'r'},
         {"type",    required_argument,  0,  't'},
         {"op",      required_argument,  0,  'o'},
         {"count",   required_argument,  0,  'c'},
+        {"save",    no_argument,        0,  's'},
         {"help",    no_argument,        0,  'h'},
         {0}
     };
@@ -163,8 +207,11 @@ int main(int argc, char** argv) {
     int c;
 
     std::string api;
-    size_t warmup_count = 0;
-    size_t repeat_count = 1000;
+#if !defined(__BUILD_FOR_OMPI__) && defined(CUDA_FOUND)
+    int32_t         gpu = -1;
+#endif//!__BUILD_FOR_OMPI__ && CUDA_FOUND
+    size_t          warmup_count = 0;
+    size_t          repeat_count = 1000;
 #ifdef __BUILD_FOR_OMPI__
     MPI_Datatype    data_type = MPI_UINT32_T;
     MPI_Op          operation = MPI_SUM;
@@ -172,11 +219,12 @@ int main(int argc, char** argv) {
     ncclDataType_t  data_type = ncclUint32;
     ncclRedOp_t     operation = ncclSum;
 #endif
-    size_t data_count = 1024;
+    size_t          data_count = 1024;
+    bool            save = false;
 
     while (true) {
         int option_index = 0;
-        c = getopt_long(argc,argv, "a:w:r:t:o:c:h", long_options, &option_index);
+        c = getopt_long(argc,argv, "a:g:w:r:t:o:c:sh", long_options, &option_index);
 
         if (c == -1) {
             break;
@@ -186,6 +234,11 @@ int main(int argc, char** argv) {
         case 'a':
             api = optarg;
             break;
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+        case 'g':
+            gpu = std::stoi(optarg);
+            break;
+#endif//defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
         case 'w':
             warmup_count = std::stoul(optarg);
             break;
@@ -200,6 +253,9 @@ int main(int argc, char** argv) {
             break;
         case 'c':
             data_count = std::stoul(optarg);
+            break;
+        case 's':
+            save = true;
             break;
         case 'h':
             print_help(argv[0]);
@@ -219,6 +275,9 @@ int main(int argc, char** argv) {
     std::cout << "dccl api evaluation with the following configuration:" << std::endl;
 #endif
     std::cout << "\tapi:" << api << std::endl;
+#if defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
+    std::cout << "\tgpu:" << gpu << "\t(CPU == -1)" << std::endl;
+#endif//defined(CUDA_FOUND) && !defined(__BUILD_FOR_OMPI__)
     std::cout << "\twarmup:" << warmup_count << std::endl;
     std::cout << "\trepeat:" << repeat_count << std::endl;
     std::cout << "\ttype:" << data_type << std::endl;
@@ -291,23 +350,57 @@ int main(int argc, char** argv) {
         return 1;
     }
 #endif//__USE_OMPI_WIN__
-#else
-    size_t data_size = size_of_type(data_type);
-    void* dccl_sendbuf = nullptr;
-    void* dccl_recvbuf = nullptr;
-    if (posix_memalign(&dccl_sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
-        posix_memalign(&dccl_recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
-        std::cerr << "Failed to allocate " << (data_count*data_size + CACHELINE_SIZE) << " bytes" << std::endl;
-        std::cerr << "Error:" << std::strerror(errno) << std::endl;
-        ncclCommFinalize(comm);
-        return 1;
-    }
-    sendbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_sendbuf) + ENFORCE_BUFFER_OFFSET);
-    recvbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_recvbuf) + ENFORCE_BUFFER_OFFSET);
-#endif//__BUILD_FOR_OMPI__
     // initialize sendbuf and recvbuf
     memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
     memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
+    if (save) {
+        save_mem(sendbuf,data_count*data_size,"sendbuf.ompi.before.txt");
+    }
+#else//__BUILD_FOR_OMPI__
+    size_t data_size = size_of_type(data_type);
+    void* dccl_sendbuf = nullptr;
+    void* dccl_recvbuf = nullptr;
+#if defined(CUDA_FOUND)
+    cudaStream_t stream = static_cast<cudaStream_t>(nullptr);
+
+    if (gpu < 0) { // HOST Memory
+#else
+    cudaStream_t stream = nullptr;
+#endif//CUDA_FOUND
+        if (posix_memalign(&dccl_sendbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE) ||
+            posix_memalign(&dccl_recvbuf,CACHELINE_SIZE,data_count*data_size + CACHELINE_SIZE)) {
+            std::cerr << "Failed to allocate " << (data_count*data_size + CACHELINE_SIZE) << " bytes" << std::endl;
+            std::cerr << "Error:" << std::strerror(errno) << std::endl;
+            ncclCommFinalize(comm);
+            return 1;
+        }
+        sendbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_sendbuf) + ENFORCE_BUFFER_OFFSET);
+        recvbuf = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dccl_recvbuf) + ENFORCE_BUFFER_OFFSET);
+        // initialize sendbuf and recvbuf
+        memset(sendbuf,static_cast<int>(my_rank),data_count*data_size);
+        memset(recvbuf,static_cast<int>(my_rank+128),data_count*data_size);
+        if (save) {
+            save_mem(sendbuf,data_count*data_size,"sendbuf.host.before.txt");
+        }
+#if defined(CUDA_FOUND)
+    } else { // GPU Memory
+        ASSERTRT(cudaSetDevice(gpu));
+        ASSERTRT(cudaMalloc(&dccl_sendbuf, data_count * data_size + CUDA_L1_CACHELINE_SIZE));
+        ASSERTRT(cudaMalloc(&dccl_recvbuf, data_count * data_size + CUDA_L1_CACHELINE_SIZE));
+        ASSERTRT(cudaStreamCreate(&stream));
+        sendbuf = __ADDRESS_ALIGN__(reinterpret_cast<uintptr_t>(dccl_sendbuf) + CUDA_L1_CACHELINE_SIZE,
+                                    CUDA_L1_CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
+        recvbuf = __ADDRESS_ALIGN__(reinterpret_cast<uintptr_t>(dccl_recvbuf) + CUDA_L1_CACHELINE_SIZE,
+                                    CUDA_L1_CACHELINE_SIZE,ENFORCE_BUFFER_OFFSET);
+        ASSERTRT(cudaMemset(sendbuf,static_cast<int>(my_rank),data_count*data_size));
+        ASSERTRT(cudaMemset(recvbuf,static_cast<int>(my_rank),data_count*data_size));
+        if (save) {
+            save_cuda_mem(sendbuf,data_count*data_size,"sendbuf.cuda.before.txt");
+        }
+    }
+#endif//CUDA_FOUND
+#endif//__BUILD_FOR_OMPI__
+
 #ifdef __BUILD_FOR_OMPI__
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
@@ -324,30 +417,30 @@ int main(int argc, char** argv) {
             return 2; \
         } \
     }
-#else
+#else // !__BUILD_FOR_OMPI__
 #define RUN_WITH_COUNTER(cnt) \
     while (cnt--) { \
         if (api == "all_reduce") { \
-            ret = ncclAllReduce(sendbuf,sendbuf,data_count,data_type,operation,comm); \
+            ret = ncclAllReduce(sendbuf,sendbuf,data_count,data_type,operation,comm,stream); \
         } else if (api == "reduce_scatter") { \
             ret = ncclReduceScatter(sendbuf, \
                                     reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
-                                    data_count/dcclGetWorldSize(comm),data_type,operation,comm); \
+                                    data_count/dcclGetWorldSize(comm),data_type,operation,comm,stream); \
         } else if (api == "all_gather") { \
             ret = ncclAllGather(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sendbuf) + my_rank*data_count*size_of_type(data_type)/world_size), \
                                 sendbuf, \
-                                data_count/dcclGetWorldSize(comm),data_type,comm); \
+                                data_count/dcclGetWorldSize(comm),data_type,comm,stream); \
         } else if (api == "reduce") { \
-            ret = ncclReduce(sendbuf,sendbuf,data_count,data_type,operation,0,comm); \
+            ret = ncclReduce(sendbuf,sendbuf,data_count,data_type,operation,0,comm,stream); \
         } else if (api == "broadcast") { \
-            ret = ncclBroadcast(sendbuf,recvbuf,data_count, data_type, 0, comm); \
+            ret = ncclBroadcast(sendbuf,recvbuf,data_count,data_type,0,comm,stream); \
         } else if (api == "send") { \
             if (my_rank < 2) { \
-                ret = ncclSend(sendbuf,data_count,data_type,1 - my_rank,comm); \
+                ret = ncclSend(sendbuf,data_count,data_type,1 - my_rank,comm,stream); \
             } \
         } else if (api == "recv") { \
             if (my_rank < 2) { \
-                ret = ncclRecv(sendbuf,data_count,data_type,1 - my_rank, comm); \
+                ret = ncclRecv(sendbuf,data_count,data_type,1 - my_rank,comm,stream); \
             } \
         } else { \
             ret = ncclInvalidArgument; \
@@ -364,9 +457,12 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to register sendbuf@" << sendbuf << "to dccl." << std::endl;
         return 1;
     }
-    if (dcclRegisterCacheMemory(comm,recvbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
-        std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
-        return 1;
+    // only broadcast test need it.
+    if (api == "broadcast") {
+        if (dcclRegisterCacheMemory(comm,recvbuf,data_count*size_of_type(data_type)) != ncclSuccess) {
+            std::cerr << "Failed to register recvbuf@" << recvbuf << "to dccl." << std::endl;
+            return 1;
+        }
     }
 
 #endif//__BUILD_FOR_OMPI__
@@ -393,6 +489,11 @@ int main(int argc, char** argv) {
     MPI_Win_free(&s_win);
     MPI_Win_free(&r_win);
 #endif//__USE_OMPI_WIN__
+    // save data
+    if (save) {
+        save_mem(ompi_recvbuf,data_count*data_size,"recvbuf.ompi.txt");
+        save_mem(ompi_sendbuf,data_count*data_size,"sendbuf.ompi.after.txt");
+    }
     // free data
     MPI_Free_mem(ompi_sendbuf);
     MPI_Free_mem(ompi_recvbuf);
@@ -401,13 +502,32 @@ int main(int argc, char** argv) {
     if (dcclDeregisterCacheMemory(comm,sendbuf) != ncclSuccess) {
         std::cerr << "Failed to deregister sendbuf@" << sendbuf << "from dccl." << std::endl;
     }
-    if (dcclDeregisterCacheMemory(comm,recvbuf) != ncclSuccess) {
-        std::cerr << "Failed to deregister recvbuf@" << recvbuf << "from dccl." << std::endl;
+    if (api == "broadcast") {
+        // only broad cast need recvbuf.
+        if (dcclDeregisterCacheMemory(comm,recvbuf) != ncclSuccess) {
+            std::cerr << "Failed to deregister recvbuf@" << recvbuf << "from dccl." << std::endl;
+        }
     }
-
+#if defined(CUDA_FOUND)
     // free data
-    free(dccl_sendbuf);
-    free(dccl_recvbuf);
+    if (gpu < 0) {
+#endif//CUDA_FOUND
+        if (save) {
+            save_mem(recvbuf,data_count*data_size,"recvbuf.host.txt");
+            save_mem(sendbuf,data_count*data_size,"sendbuf.host.after.txt");
+        }
+        free(dccl_sendbuf);
+        free(dccl_recvbuf);
+#if defined(CUDA_FOUND)
+    } else {
+        if (save) {
+            save_cuda_mem(recvbuf,data_count*data_size,"recvbuf.cuda.txt");
+            save_cuda_mem(sendbuf,data_count*data_size,"sendbuf.cuda.after.txt");
+        }
+        ASSERTRT(cudaFree(dccl_sendbuf));
+        ASSERTRT(cudaFree(dccl_recvbuf));
+    }
+#endif//CUDA_FOUND
 #endif//__BUILD_FOR_OMPI__
 
     // step 5 -flush timestmap

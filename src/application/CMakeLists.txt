@@ -2,13 +2,16 @@ cmake_minimum_required(VERSION 3.12.4)
 set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
-add_executable(dccl_cli cli.cpp)
+add_executable(dccl_cli cli.cpp utils.cpp)
 target_include_directories(dccl_cli PRIVATE
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 target_link_libraries(dccl_cli dccl)
+if (CUDA_FOUND)
+    target_link_libraries(dccl_cli CUDA::cudart)
+endif()
 add_dependencies(dccl_cli dccl)
 
 add_custom_command(TARGET dccl_cli POST_BUILD
@@ -35,7 +38,7 @@ add_custom_command(TARGET dccl_cli POST_BUILD
 )
 
 if(MPI_CXX_FOUND AND MPI_CXX_VERSION VERSION_GREATER_EQUAL 3.1)
-    add_executable(ompi_cli cli.cpp)
+    add_executable(ompi_cli cli.cpp utils.cpp)
     target_include_directories(ompi_cli PRIVATE
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
@@ -55,5 +58,9 @@ target_include_directories(p2p_perf PRIVATE
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
-target_link_libraries(p2p_perf dccl derecho)
+if (CMAKE_CUDA_COMPILER)
+    target_link_libraries(p2p_perf dccl derecho cuda CUDA::cudart)
+else()
+    target_link_libraries(p2p_perf dccl derecho)
+endif()
 add_dependencies(p2p_perf dccl)

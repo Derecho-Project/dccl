@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.12.4)
 set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 project(dccl CXX)
+include(CheckLanguage)
+check_language(CUDA)
 
 # Version
 set(dccl_VERSION 1.0rc0)
@@ -21,6 +23,7 @@ if (${USE_VERBS_API})
 endif()
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -Wall -ggdb -gdwarf-3 -ftemplate-backtrace-limit=0 -DEVALUATION")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -mprefer-vector-width=512 -Wall -DEVALUATION -fcompare-debug-second")
+set(CMAKE_CXX_FLAGS_BENCHMARK "${CMAKE_CXX_FLAGS_RELEASE} -Ofast -march=native -mprefer-vector-width=512 -Wall -DEVALUATION -fcompare-debug-second")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wall -ggdb -gdwarf-3")
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/Modules")
@@ -56,11 +59,34 @@ find_package(OpenSSL REQUIRED)
 # derecho
 find_package(derecho CONFIG REQUIRED)
 
+
 # openmpi
-find_package(MPI REQUIRED)
+find_package(MPI)
 
 # doxygen
 find_package(Doxygen)
+
+# cuda found
+if (CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+    find_package(CUDAToolkit)
+    set( CUDA_FOUND 1 )
+    set( CUDA_L1_CACHELINE_SIZE 128 )
+    set( CUDA_L2_CACHELINE_SIZE 32 )
+
+    if (NOT DEFINED CMAKE_CUDA_STANDARD)
+        set(CMAKE_CUDA_STANDARD 17)
+        set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+    endif()
+    
+    if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        execute_process(COMMAND bash -c "nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits | sed 's/\\.//' | head -1 "
+                        OUTPUT_VARIABLE NATIVE_CUDA_ARCH)
+        string(STRIP ${NATIVE_CUDA_ARCH} NATIVE_CUDA_ARCH)
+        set(CMAKE_CUDA_ARCHITECTURES ${NATIVE_CUDA_ARCH})
+        message(STATUS "NATIVE_CUDA_ARCH=${NATIVE_CUDA_ARCH}")
+    endif()
+endif()
 
 # Derecho exports an IMPORT target, following the "new" way of
 # doing things, but for some reason we still need to do this
@@ -79,15 +105,28 @@ CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DI
 add_subdirectory(src/core)
 add_subdirectory(src/utils)
 
+if(CUDA_FOUND)
+add_library(dccl SHARED
+    $<TARGET_OBJECTS:core>
+    $<TARGET_OBJECTS:cureduce>
+)
+else()
 add_library(dccl SHARED
     $<TARGET_OBJECTS:core>
 )
+endif()
 target_link_libraries(dccl 
     derecho
     spdlog::spdlog
     OpenSSL::Crypto
     ${mutils_LIBRARIES}
 )
+if(CUDA_FOUND)
+target_link_libraries(dccl
+    CUDA::cudart
+    CUDA::cuda_driver
+)
+endif()
 add_dependencies(dccl core utils)
 
 add_subdirectory(src/application)
